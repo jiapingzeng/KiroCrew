@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Plug, AlertTriangle, Check, ChevronRight, Zap, X, Download, Braces } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Trans } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import { Card, Btn, Badge, SearchInput, ContentSkeleton } from '../../components/ui'
 import InfoTip from '../../components/InfoTip'
@@ -101,15 +103,20 @@ function ScopeBadge({
  * `needs_auth` is not a failure. The status probe runs WITHOUT the OAuth token
  * kiro-cli holds (Kiro Crew keeps no credentials), so a remote OAuth server
  * answers it with 401 while the agent runtime calls the same server fine —
- * reported as "Error / HTTP 401" in #1853. The label says "Not verified" rather
- * than naming an action, because the 401 does not distinguish a server nobody
- * authorized from one authorized through kiro-cli: all we truthfully know is
- * that we cannot see this server's authorization from here.
+ * reported as "Error / HTTP 401" in #1853.
+ *
+ * Which of the two `needs_auth` labels applies turns on evidence the probe now
+ * collects: the server's own challenge says it wants OAuth, and the runtime's
+ * grant artifacts say whether anyone has completed it. With `authGrantPresent`
+ * explicitly false, "Sign-in required" is a fact and names the action. Without
+ * that evidence — an older gateway, or a 401 carrying no challenge — the 401
+ * still cannot distinguish a server nobody authorized from one authorized
+ * through kiro-cli, and "Not verified" remains the only truthful wording.
  *
  * An unrecognised status stays "Unknown" — a newer gateway may report a state
  * this build predates, and inventing a label for it would be a guess.
  */
-function mcpStatusLabel(status: string): string {
+function mcpStatusLabel(status: string, signInRequired = false): string {
   switch (status) {
     case 'ok':
       return i18nT('pages.overview.mcpTab.online')
@@ -120,10 +127,24 @@ function mcpStatusLabel(status: string): string {
     case 'disabled':
       return i18nT('pages.overview.mcpTab.disabled')
     case 'needs_auth':
-      return i18nT('pages.overview.mcpTab.not_verified')
+      return signInRequired
+        ? i18nT('pages.overview.mcpTab.sign_in_required')
+        : i18nT('pages.overview.mcpTab.not_verified')
     default:
       return i18nT('pages.overview.mcpTab.unknown')
   }
+}
+
+/**
+ * True when the server told us it wants OAuth and no runtime grant exists yet.
+ *
+ * Gated on an explicit `false` rather than a falsy check: `authGrantPresent` is
+ * absent whenever the probe learned nothing, and treating absent as "no grant"
+ * would tell every user of an older gateway to sign in to servers that are
+ * already working.
+ */
+function mcpSignInRequired(s: McpServer): boolean {
+  return s.status === 'needs_auth' && !!s.authChallenge && s.authGrantPresent === false
 }
 
 /** Only a hard failure is toned as an error; `needs_auth` rides the warn default. */
@@ -141,8 +162,10 @@ function mcpStatusVariant(status: string): 'ok' | 'err' | 'warn' {
  * it: this table renders inside the Connections page, and two wordings of one
  * limitation would drift and would cost every locale a second translation.
  */
-function mcpStatusHint(status: string, serverName: string): string | undefined {
+function mcpStatusHint(status: string, serverName: string, signInRequired = false): string | undefined {
   if (status !== 'needs_auth') return undefined
+  // The sign-in case explains itself in the row now, so a title would duplicate it.
+  if (signInRequired) return undefined
   return i18nT('pages.connectionsPage.not_verified_help', { provider: serverName })
 }
 
@@ -167,6 +190,7 @@ export default function McpTab({ onManagedProviderClick }: McpTabProps = {}) {
   // button as scope toggles so rapid clicks don't race.
   const [pendingTools, setPendingTools] = useState<Record<string, Record<string, boolean>>>({})
   const [applyMsg, setApplyMsg] = useState('')
+
 
   // Auto-dismiss timers for the success banners. Held in refs and cleared on
   // unmount so a pending setTimeout never fires a state update after the
@@ -501,8 +525,8 @@ export default function McpTab({ onManagedProviderClick }: McpTabProps = {}) {
                       {i18nT('pages.overview.mcpTab.declared')}
                     </Badge>
                   ) : (
-                    <Badge variant={mcpStatusVariant(s.status)} title={mcpStatusHint(s.status, s.name)}>
-                      {mcpStatusLabel(s.status)}
+                    <Badge variant={mcpStatusVariant(s.status)} title={mcpStatusHint(s.status, s.name, mcpSignInRequired(s))}>
+                      {mcpStatusLabel(s.status, mcpSignInRequired(s))}
                     </Badge>
                   )}
                   {!!s.probedAt && (
@@ -519,7 +543,35 @@ export default function McpTab({ onManagedProviderClick }: McpTabProps = {}) {
                   )}
                 </td>
                 <td className="px-2.5 py-2 border-b border-border text-[13px] w-full">
-                  {s.status === 'error' && s.error ? <span className="text-danger text-[12px]"><AlertTriangle className="lucide-inline" /> {s.error}</span> : s.tools?.length ? (<div>
+                  {s.status === 'error' && s.error ? (
+                    <span className="text-danger text-[12px]">
+                      <AlertTriangle className="lucide-inline" /> {s.error}
+                      {/* A configured Authorization header that the server rejected reads as
+                          an opaque HTTP code. When the same response advertised OAuth, the
+                          actionable fact is that no static token can satisfy this server. */}
+                      {!!s.authChallenge && !!s.headers && (
+                        /* Not `text-muted`: this line is the only actionable thing in the
+                           cell, and muting it under a prominent red status code emphasised
+                           the raw failure over the remedy. */
+                        <span className="block text-warn mt-0.5">{i18nT('pages.overview.mcpTab.oauth_not_a_static_token')}</span>
+                      )}
+                    </span>
+                  ) : mcpSignInRequired(s) ? (
+                    /* Prose in the wide column rather than an Authorize control: the sign-in
+                       prompt is raised by Kiro CLI during a session's MCP bring-up, which
+                       happens on a turn, and nothing the dashboard can call from this panel
+                       starts one — so a button here would claim an action it cannot perform.
+                       Navigating to a chat session IS something the panel can do, though, so
+                       the one step the user must take themselves is a link rather than an
+                       instruction to go find it. This column already carries the other
+                       explanation a row can need, and has the width for a sentence. */
+                    <span className="text-warn text-[12px]">
+                      <Trans
+                        i18nKey="pages.overview.mcpTab.sign_in_required_help"
+                        components={{ chatLink: <Link to="/chat" className="underline hover:text-accent transition-colors" /> }}
+                      />
+                    </span>
+                  ) : s.tools?.length ? (<div>
                     <button className="flex items-center gap-1 text-[12px] text-accent hover:text-accent-hover cursor-pointer transition-colors mb-1" onClick={() => setExpandedTools(prev => { const next = new Set(prev); if (next.has(s.name)) next.delete(s.name); else next.add(s.name); return next })}>{s.tools.length} {i18nT('pages.overview.mcpTab.tools_2')}{!expandedTools.has(s.name) && (s.disabledTools?.length || 0) > 0 && <span className="text-muted ml-1">{i18nT('pages.overview.mcpTab.off_count', { count: s.disabledTools!.length })}</span>}<ChevronRight size={14} className={`transition-transform duration-200 ${expandedTools.has(s.name) ? 'rotate-90' : ''}`} /></button>
                     <AnimatePresence>{expandedTools.has(s.name) && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden"><div className="space-y-0.5">{s.tools.map(t => {
                       const currentlyDisabled = (s.disabledTools || []).includes(t)

@@ -9472,7 +9472,10 @@
         "undo": "Annuler",
         "uninstall": "Désinstaller",
         "unknown": "Inconnu",
-        "declared": "Déclaré"
+        "declared": "Déclaré",
+        "sign_in_required": "Connexion requise",
+        "sign_in_required_help": "Ce serveur utilise OAuth et personne ne s’est encore connecté. <chatLink>Ouvrez une session de chat</chatLink> et envoyez un message : il vous sera demandé d’approuver la connexion dans le chat. Actualisez ensuite la liste : la ligne passera à Non vérifié, car Kiro Crew voit l’autorisation mais ne peut pas confirmer qu’elle est toujours valide.",
+        "oauth_not_a_static_token": "Ce serveur se connecte via OAuth ; un en-tête Authorization statique ne peut pas lui suffire. Supprimez l’en-tête avec l’éditeur JSON de cette ligne, puis connectez-vous depuis une session de chat."
       },
       "memoryGraphTab": {
         "all_count": "Tous ({{count}})",

@@ -9246,7 +9246,10 @@
         "undo": "元に戻す",
         "uninstall": "アンインストール",
         "unknown": "不明",
-        "declared": "宣言のみ"
+        "declared": "宣言のみ",
+        "sign_in_required": "サインインが必要",
+        "sign_in_required_help": "このサーバーは OAuth を使用しており、まだ誰もサインインしていません。<chatLink>チャットセッションを開いて</chatLink>メッセージを送信すると、チャットでサインインの承認を求められます。その後この一覧を更新すると、行は未確認に変わります。Kiro Crew は許可を確認できますが、それが有効なままかどうかは判断できません。",
+        "oauth_not_a_static_token": "このサーバーは OAuth でサインインするため、静的な Authorization ヘッダーでは接続できません。この行の JSON エディターでヘッダーを削除してから、チャットセッションでサインインしてください。"
       },
       "memoryGraphTab": {
         "all_count": "すべて（{{count}}）",

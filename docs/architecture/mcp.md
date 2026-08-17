@@ -259,7 +259,9 @@ Probes run from `POST /api/mcp/probe`:
   `declared` for the managed in-process fallback below). Both ride the cache
   into the API payload, so the UI can say *when* a status was true — the caches
   legitimately serve results up to their TTL, and an undated "Online" reads as
-  "now".
+  "now". A remote result may additionally carry **`authChallenge`** and
+  **`authGrantPresent`**, which ride the same cache; they are described with
+  `needs_auth` below, and are emitted only together.
 - Timeout is `dashboard.mcp_probe_timeout_secs` (default 15s;
   `_PROBE_TIMEOUT_SECS` is the fallback if config is not loaded yet). Results
   are cached for `_PROBE_TTL_SECS` (1800s), after which status reads as
@@ -279,12 +281,42 @@ Probes run from `POST /api/mcp/probe`:
   header gets status `needs_auth` and an empty `error`, not `error`. The probe
   holds no OAuth token, because kiro-cli owns token custody
   ([design-notes/mcp-oauth-ownership.md](design-notes/mcp-oauth-ownership.md)), so
-  that answer carries no verdict on the server: an unauthorized server and one the
-  runtime calls successfully both return it. The dashboard renders `needs_auth` as
-  "Not verified" for that reason — naming an action the user may not need would
-  assert more than the probe observed. A `401` on an entry that DOES carry a static
-  `Authorization` header stays `error`: a supplied credential was rejected, which
-  is a real fault.
+  the status code alone carries no verdict on the server: an unauthorized server
+  and one the runtime calls successfully both return it.
+
+  **Two pieces of evidence split that ambiguity**, and the wording follows what
+  they support rather than the status code. The probe parses the challenge (a
+  Bearer challenge carrying a `scope` list or an https `resource_metadata` URL sets
+  `authChallenge`), and it stats kiro-cli's paired grant artifacts for the url to
+  set `authGrantPresent`. With a challenge and NO grant, "nobody has signed in" is
+  observed rather than guessed, so the row reads **"Sign-in required"** and states
+  where the sign-in happens. With a grant held, or with no challenge evidence at
+  all — an older gateway, or a bare `401` — the row keeps **"Not verified"**,
+  because naming an action there would still assert more than the probe observed.
+
+  **Absence in the payload is meaningful, and the UI gates on an explicit `false`.**
+  `authChallenge` is omitted when the probe learned nothing about authorization.
+  `authGrantPresent` is omitted for that reason too, and *also* when the grant
+  lookup could not answer at all — a cache home that raises, such as a permission
+  error or a broken mount. Reporting an unanswerable lookup as `false` would tell
+  the owner of an already-authorized server to sign in again, so the three-valued
+  result is preserved to the wire rather than flattened. Each probe clears both
+  fields before it runs: the probe cache is keyed by NAME, so a row whose url was
+  edited would otherwise inherit the previous endpoint's verdict.
+
+  One degradation is NOT covered by that, and the limit is worth stating. The
+  lookup mirrors kiro-cli's own cache-key derivation and artifact layout, both
+  undocumented internals. If kiro-cli re-keys them, the stat succeeds against a
+  path that is simply absent, so the answer is `false` rather than unanswerable and
+  an authorized server reads "Sign-in required". That is mild and self-healing — a
+  second sign-in re-mints the grant — but it is a wrong-looking row, and the
+  recorded-hash tests pin the mirror only against itself, so the drift would not
+  fail in-repo. Detecting it needs an observation of kiro-cli's real layout.
+
+  A `401` on an entry that DOES carry a static `Authorization` header stays
+  `error`: a supplied credential was rejected, which is a real fault. The
+  challenge is still recorded there, because "this server wants OAuth, so no
+  static header can satisfy it" is the actionable part of that failure.
 - A probed stdio child that ignores a closed stdin costs
   `_PROBE_TEARDOWN_WAIT_SECS` twice (graceful wait, then again after SIGKILL)
   before the process-group reap, which is why that budget is a named constant

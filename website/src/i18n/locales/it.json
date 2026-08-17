@@ -9472,7 +9472,10 @@
         "undo": "Annulla",
         "uninstall": "Disinstalla",
         "unknown": "Sconosciuto",
-        "declared": "Dichiarato"
+        "declared": "Dichiarato",
+        "sign_in_required": "Accesso richiesto",
+        "sign_in_required_help": "Questo server usa OAuth e nessuno ha ancora effettuato l’accesso. <chatLink>Apri una sessione di chat</chatLink> e invia un messaggio: ti verrà chiesto di approvare l’accesso nella chat. Poi aggiorna l’elenco e la riga passerà a Non verificato, perché Kiro Crew vede la concessione ma non può confermare che sia ancora valida.",
+        "oauth_not_a_static_token": "Questo server accede tramite OAuth, quindi un header Authorization statico non è sufficiente. Rimuovi l’header con l’editor JSON di questa riga, poi accedi da una sessione di chat."
       },
       "memoryGraphTab": {
         "all_count": "Tutti ({{count}})",

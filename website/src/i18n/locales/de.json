@@ -9359,7 +9359,10 @@
         "undo": "Rückgängig",
         "uninstall": "Deinstallieren",
         "unknown": "Unbekannt",
-        "declared": "Deklariert"
+        "declared": "Deklariert",
+        "sign_in_required": "Anmeldung erforderlich",
+        "sign_in_required_help": "Dieser Server verwendet OAuth und es hat sich noch niemand angemeldet. <chatLink>Öffnen Sie eine Chat-Sitzung</chatLink> und senden Sie eine Nachricht – die Genehmigung der Anmeldung erfolgt dann im Chat. Danach die Liste aktualisieren: die Zeile wechselt zu Nicht verifiziert, denn Kiro Crew sieht die Freigabe, kann aber ihre Gültigkeit nicht bestätigen.",
+        "oauth_not_a_static_token": "Dieser Server meldet sich über OAuth an; ein statischer Authorization-Header genügt ihm nicht. Entfernen Sie den Header mit dem JSON-Editor dieser Zeile und melden Sie sich dann in einer Chat-Sitzung an."
       },
       "memoryGraphTab": {
         "all_count": "Alle ({{count}})",

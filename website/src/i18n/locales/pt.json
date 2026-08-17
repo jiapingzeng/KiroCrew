@@ -9472,7 +9472,10 @@
         "undo": "Desfazer",
         "uninstall": "Desinstalar",
         "unknown": "Desconhecido",
-        "declared": "Declarado"
+        "declared": "Declarado",
+        "sign_in_required": "Início de sessão necessário",
+        "sign_in_required_help": "Este servidor usa OAuth e ainda ninguém iniciou sessão. <chatLink>Abra uma sessão de chat</chatLink> e envie uma mensagem: será pedido que aprove o início de sessão no chat. Depois atualize a lista e a linha passará a Não verificado, pois o Kiro Crew vê a concessão mas não pode confirmar que continua válida.",
+        "oauth_not_a_static_token": "Este servidor inicia sessão com OAuth, por isso um cabeçalho Authorization estático não é suficiente. Remova o cabeçalho com o editor JSON desta linha e depois inicie sessão a partir de uma sessão de chat."
       },
       "memoryGraphTab": {
         "all_count": "Todos ({{count}})",

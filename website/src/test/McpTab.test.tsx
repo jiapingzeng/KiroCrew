@@ -26,6 +26,7 @@ vi.mock('../components/McpBrowserModal', () => ({
 }))
 
 import McpTab from '../pages/overview/McpTab'
+import { MemoryRouter } from 'react-router-dom'
 
 const server = (name: string): McpServer => ({
   name, command: `${name}-cmd`, status: 'ok', source: 'kirocrew', enabled: true, tools: ['t1'],
@@ -33,7 +34,14 @@ const server = (name: string): McpServer => ({
 
 function renderTab() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}><McpTab /></QueryClientProvider>)
+  // MemoryRouter because the sign-in guidance renders a <Link> to the chat route:
+  // react-router's Link reads its context unconditionally and throws without a
+  // router, so this wrapper is load-bearing rather than boilerplate.
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={qc}><McpTab /></QueryClientProvider>
+    </MemoryRouter>,
+  )
 }
 
 beforeEach(() => {
@@ -127,6 +135,127 @@ describe('McpTab needs_auth status', () => {
     expect(hint).toContain('atlassian')
     expect(hint).toContain('Kiro CLI')
     expect(hint).toMatch(/cannot see the authorization/)
+  })
+
+  /**
+   * With a challenge AND an absent runtime grant, "nobody has signed in" is a
+   * fact rather than a guess, so the row names the action. Everything below
+   * turns on that pair being present — absent evidence must keep the vaguer
+   * wording, because an older gateway sends none and its servers may be fine.
+   */
+  it('says sign-in is required when the server asked for OAuth and no grant exists', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      { ...remote('needs_auth'), authChallenge: true, authGrantPresent: false },
+    ])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Sign-in required')).toBeInTheDocument())
+    expect(screen.queryByText('Not verified')).not.toBeInTheDocument()
+    // Still a warning, never an error: nothing is broken, it just needs a sign-in.
+    expect(screen.getByText('Sign-in required').className).toContain('text-warn')
+    expect(screen.getByText('Sign-in required').className).not.toContain('text-danger')
+  })
+
+  it('keeps the not-verified wording once a runtime grant exists', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      { ...remote('needs_auth'), authChallenge: true, authGrantPresent: true },
+    ])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Not verified')).toBeInTheDocument())
+    expect(screen.queryByText('Sign-in required')).not.toBeInTheDocument()
+  })
+
+  it('keeps the not-verified wording when the gateway sent no authorization evidence', async () => {
+    // An older gateway, or a 401 with no challenge. Telling this user to sign in
+    // would be a guess about a server that may already be working.
+    mockApi.mcpServers.mockResolvedValue([remote('needs_auth')])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Not verified')).toBeInTheDocument())
+    expect(screen.queryByText(/Open a chat session and send a message/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * The sign-in prompt is raised by Kiro CLI while a session brings its MCP
+   * servers up, which happens on a turn. Nothing the dashboard can call from
+   * this panel starts that, so the row states where the sign-in happens rather
+   * than offering a control that cannot perform it.
+   */
+  it('tells the user where the sign-in happens, and offers no control that cannot do it', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      { ...remote('needs_auth'), authChallenge: true, authGrantPresent: false },
+    ])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Sign-in required')).toBeInTheDocument())
+    // The remedy is an affordance, not an instruction: the one step the user must
+    // take is a link to the chat route, since that navigation IS something the
+    // panel can perform. A prose-only hint would make the fix for a
+    // discoverability bug itself undiscoverable.
+    const link = screen.getByRole('link', { name: /Open a chat session/ })
+    expect(link).toHaveAttribute('href', '/chat')
+    // The flow has an ending. Sending the user to chat without saying what success
+    // looks like left them at a row that merely stops saying "Sign-in required" —
+    // so the copy names the refresh and the state it lands in, which is "Not
+    // verified" rather than a confirmation Kiro Crew cannot honestly give.
+    expect(screen.getByText(/refresh this list and the row will change to Not verified/)).toBeInTheDocument()
+    // Still no Authorize control: starting the sign-in is not something this
+    // panel can do, and a button here would claim an action it cannot perform.
+    expect(screen.queryByRole('button', { name: /Authorize/ })).not.toBeInTheDocument()
+  })
+
+  it('does not show the sign-in guidance once a runtime grant exists', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      { ...remote('needs_auth'), authChallenge: true, authGrantPresent: true },
+    ])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Not verified')).toBeInTheDocument())
+    expect(screen.queryByText(/Open a chat session and send a message/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * `max-two-buttons-per-row` (website/AUTOSDE.yaml) caps a horizontal action
+   * group at two siblings. A managed row that needs a sign-in is where a third
+   * action would land, so the cap is asserted there.
+   */
+  it('keeps the action group at two buttons on a managed row that needs sign-in', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      {
+        ...remote('needs_auth'),
+        kirocrewManaged: true,
+        authChallenge: true,
+        authGrantPresent: false,
+      },
+    ])
+    renderTab()
+
+    const uninstall = await screen.findByRole('button', { name: /Uninstall/ })
+    const group = uninstall.closest('div')
+    expect(group).not.toBeNull()
+    expect(group!.querySelectorAll('button').length).toBeLessThanOrEqual(2)
+  })
+
+  it('tells the user a pasted token cannot satisfy an OAuth server', async () => {
+    mockApi.mcpServers.mockResolvedValue([
+      {
+        ...remote('error'),
+        error: 'HTTP 401',
+        headers: { Authorization: '[REDACTED: credential]' },
+        authChallenge: true,
+      },
+    ])
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('HTTP 401')).toBeInTheDocument())
+    expect(screen.getByText(/static Authorization header cannot satisfy it/)).toBeInTheDocument()
+    // The recovery step, not just the diagnosis: without it a misconfigured user
+    // has to guess that the header must come out before a sign-in can work — and
+    // "remove the header" is only actionable if it names the control that opens it.
+    expect(
+      screen.getByText(/Remove the header with this row's JSON editor, then sign in from a chat session/),
+    ).toBeInTheDocument()
   })
 
   it('leaves every other status without a hover explanation', async () => {
