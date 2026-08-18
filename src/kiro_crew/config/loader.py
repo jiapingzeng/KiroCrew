@@ -116,6 +116,9 @@ from kiro_crew.instances.constants import (
 )
 from kiro_crew.mcp_gateway.rewriter import default_overlay_dir, default_socket_path
 
+# Leaf module (stdlib only) — no import cycle with config.
+from kiro_crew.variables import validate_pair as _validate_variable
+
 logger = logging.getLogger(__name__)
 
 # Top-level config.json keys that save() stamps itself rather than modelling as
@@ -156,6 +159,7 @@ _KNOWN_CONFIG_SECTIONS: frozenset = frozenset(
         "default_agent",
         "workspaces",
         "default_workspace",
+        "variables",
         "memory_stores",
         "default_memory_store",
         "stt",
@@ -652,6 +656,15 @@ def _subtract_overlay(merged: dict, overlay: dict) -> dict:
     For nested dicts, recurse. For leaf keys present in both overlay and
     merged with the same value, remove from the result so they only live
     in config.local.json.
+
+    Note what this can and cannot do for a SHADOWED value. The overlay wins at
+    load, so for any leaf the overlay defines, ``merged[key] == overlay[key]``
+    always — the base's own differing value was replaced during the merge and is
+    simply not present here to preserve. Subtracting is therefore the least-bad
+    option available to this function: it leaves the key out of the base file so
+    the overlay stays its only definer, rather than writing the overlay's value in.
+    Restoring a shadowed base value needs the base DOCUMENT, which
+    :meth:`KiroCrewConfig.save` reads separately (see ``_preserve_base_variables``).
     """
     result = dict(merged)
     for key, ov_value in overlay.items():
@@ -665,6 +678,53 @@ def _subtract_overlay(merged: dict, overlay: dict) -> dict:
                 del result[key]
         elif result[key] == ov_value:
             del result[key]
+    return result
+
+
+def _preserve_base_variables(outgoing: dict, base: dict) -> dict:
+    """Restore ``variables`` maps from the BASE document into *outgoing*.
+
+    ``save()`` serializes the MERGED config, so without this a whole-config write
+    does one of two wrong things to a variables map, and swapping between them was
+    a review round each:
+
+    * subtracted (the overlay-owned leaves deleted) — an unrelated settings save
+      silently drops a base variable that duplicates an overlay value, and can
+      delete a whole workspace entry when every leaf matches;
+    * left in place — the MERGED value is written, so the overlay's value is copied
+      into ``config.json`` and a base value shadowed by the overlay is overwritten.
+
+    Neither is recoverable from the merged view, because the merge already
+    discarded the shadowed base value. So a whole-config write is made
+    variables-NEUTRAL: whatever ``config.json`` already held is restored verbatim,
+    and a map absent from the base stays absent. The only writer of variables is
+    ``PUT /api/variables``, which patches named keys on the base document under a
+    lock and never goes through this path.
+
+    Covers all three scopes: top level, ``workspaces.<name>`` and ``agents.<name>``.
+    """
+    result = dict(outgoing)
+
+    def _restore(dst: dict, src: dict) -> None:
+        own = src.get("variables")
+        if isinstance(own, dict):
+            dst["variables"] = dict(own)
+        else:
+            dst.pop("variables", None)
+
+    _restore(result, base)
+    for section in ("workspaces", "agents"):
+        entries = result.get(section)
+        base_entries = base.get(section)
+        if not isinstance(entries, dict) or not isinstance(base_entries, dict):
+            continue
+        for name, entry in list(entries.items()):
+            if not isinstance(entry, dict):
+                continue
+            base_entry = base_entries.get(name)
+            merged_entry = dict(entry)
+            _restore(merged_entry, base_entry if isinstance(base_entry, dict) else {})
+            entries[name] = merged_entry
     return result
 
 
@@ -3049,6 +3109,15 @@ class KiroCrewAgentConfig:
         default="kirocrew",
         metadata=_meta("Source", "Agent origin: kirocrew or builtin."),
     )
+    variables: dict[str, str] = field(
+        default_factory=dict,
+        metadata=_meta(
+            "Variables",
+            "Variables scoped to this crew — the narrowest persisted scope. "
+            "Override the workspace and global maps per key. Plain text in "
+            "config.json; not for secrets.",
+        ),
+    )
     # Per-agent watchdog window overrides. The global ``watchdog.tool_stall_*``
     # defaults (1h) are build-scale forbearance; an agent that never runs a long
     # build (a pure-LLM reviewer, read-only git) can declare much lower windows
@@ -3091,6 +3160,14 @@ class WorkspaceConfig:
     dir: str = field(
         default="workspace",
         metadata=_meta("Directory", "Workspace directory path."),
+    )
+    variables: dict[str, str] = field(
+        default_factory=dict,
+        metadata=_meta(
+            "Variables",
+            "Variables scoped to this workspace. Override the global map per "
+            "key and are themselves overridden by a crew's own variables.",
+        ),
     )
 
 
@@ -4106,6 +4183,27 @@ def _validate_tracking_channels(raw: list) -> list[dict]:
     return result
 
 
+def coerce_variables(raw: object, scope: str) -> dict[str, str]:
+    """Validate one scope's variable map, dropping pairs that cannot be used.
+
+    A rejected pair is dropped on its own, with a warning naming the scope, the
+    key and the reason. config.json is hand-editable, so one bad pair must cost
+    neither the rest of that scope nor the load itself.
+    """
+    if not isinstance(raw, dict):
+        if raw is not None:
+            logger.warning("Ignoring %s variables: expected an object", scope)
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        name, outcome = _validate_variable(key, value)
+        if name is None:
+            logger.warning("Ignoring variable %r in %s: %s", key, scope, outcome)
+            continue
+        out[name] = outcome
+    return out
+
+
 def _migrate_workspaces(raw_workspaces: dict) -> dict[str, WorkspaceConfig]:
     """Auto-migrate workspaces from flat or structured format.
 
@@ -4119,7 +4217,10 @@ def _migrate_workspaces(raw_workspaces: dict) -> dict[str, WorkspaceConfig]:
         if isinstance(value, str):
             result[name] = WorkspaceConfig(dir=value)
         elif isinstance(value, dict):
-            result[name] = WorkspaceConfig(dir=value.get("dir", "workspace"))
+            result[name] = WorkspaceConfig(
+                dir=value.get("dir", "workspace"),
+                variables=coerce_variables(value.get("variables"), f"workspaces.{name}"),
+            )
         else:
             result[name] = WorkspaceConfig()
     if not result:
@@ -5759,6 +5860,16 @@ class KiroCrewConfig:
         default="default",
         metadata=_meta("Default Workspace", "Active workspace name."),
     )
+    variables: dict[str, str] = field(
+        default_factory=dict,
+        metadata=_meta(
+            "Variables",
+            "Global variables expanded as a doubled-brace token in prompts, "
+            "chat messages and cron messages. Broadest scope: a workspace or "
+            "crew overrides them per key. Plain text in config.json; not for "
+            "secrets.",
+        ),
+    )
     memory_stores: dict[str, MemoryStoreConfig] = field(
         default_factory=dict,
         metadata=_meta("Memory Stores", "Named memory store definitions."),
@@ -6043,6 +6154,9 @@ class KiroCrewConfig:
                             entry.get("watchdog_tool_stall_hard_cap_secs", 0.0), 0.0, lo=0.0
                         ),
                         telegram_account=entry.get("telegram_account", ""),
+                        variables=coerce_variables(
+                            entry.get("variables"), f"agents.{name}"
+                        ),
                     )
 
         # Migrate workspaces from flat or structured format
@@ -6584,6 +6698,7 @@ class KiroCrewConfig:
             default_agent=default_agent_val,
             workspaces=workspaces,
             default_workspace=data.get("default_workspace", "default"),
+            variables=coerce_variables(data.get("variables"), "variables"),
             memory_stores=memory_stores,
             default_memory_store=default_memory_store_val,
             stt=SttConfig(
@@ -6915,6 +7030,7 @@ class KiroCrewConfig:
             "agents": {name: asdict(agent_cfg) for name, agent_cfg in self.agents.items()},
             "default_agent": self.default_agent,
             "workspaces": {name: asdict(ws_cfg) for name, ws_cfg in self.workspaces.items()},
+            "variables": dict(self.variables),
             "default_workspace": self.default_workspace,
             "memory_stores": {name: asdict(ms_cfg) for name, ms_cfg in self.memory_stores.items()},
             "default_memory_store": self.default_memory_store,
@@ -6983,10 +7099,22 @@ class KiroCrewConfig:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Atomic + mode-preserving: a concurrent reader must never observe a
-        # half-written config, and the write must not widen who can read a file
-        # that may hold inline credentials. See write_config_atomically.
-        write_config_atomically(config_path(), stamp_config_meta(d))
+        # A whole-config write is variables-NEUTRAL: restore whatever config.json
+        # already holds, so this path can neither delete a base variable (the
+        # subtraction above) nor overwrite one with the overlay's value (what the
+        # merged serialization would otherwise write). The only writer of variables
+        # is PUT /api/variables, which patches named keys under a lock.
+        #
+        # The restore and the write happen in ONE locked transaction. Reading the
+        # base document separately and writing afterwards left a window: a variables
+        # PUT committing between the read and the rename was acknowledged to its
+        # caller and then discarded by this write's stale snapshot. update_config_locked
+        # hands the mutate the document it just read under the advisory lock and
+        # writes that same document back, so no other writer can land in between.
+        def _mutate(current: dict) -> dict:
+            return _preserve_base_variables(d, current)
+
+        update_config_locked(config_path(), mutate=_mutate, on_corrupt="reset")
         # Drop the validated-data cache so the next load() re-reads this write.
         # mtime-keying already detects the change; this makes it immediate even
         # if the filesystem mtime resolution is coarse.
@@ -7640,6 +7768,103 @@ def resolve_crew_identity(
         )
         return agent
     return ""
+
+
+SCOPE_GLOBAL = "global"
+SCOPE_WORKSPACE = "workspace"
+SCOPE_CREW = "crew"
+SCOPE_SESSION = "session"
+
+# Broadest to narrowest. A narrower scope overrides a broader one per key.
+VARIABLE_SCOPES: tuple[str, ...] = (SCOPE_GLOBAL, SCOPE_WORKSPACE, SCOPE_CREW, SCOPE_SESSION)
+
+
+@dataclass
+class VariableResolution:
+    """The variable map in effect for a session, with where each value came from."""
+
+    values: dict[str, str] = field(default_factory=dict)
+    # key -> the scope whose value won.
+    winning_scope: dict[str, str] = field(default_factory=dict)
+    # key -> broader scopes that also defined it and were overridden.
+    shadowed: dict[str, list[str]] = field(default_factory=dict)
+    # Which crew and workspace the layers were taken from, so a caller can
+    # report the resolution without repeating the selection rules.
+    agent_name: str = ""
+    workspace_name: str = ""
+
+
+def variable_values_for(agent_name: str | None = None) -> dict[str, str]:
+    """The effective variable map for *agent_name*, or empty when unavailable.
+
+    Never raises: a malformed or unreadable config leaves text unexpanded rather
+    than failing the turn, since a variable is a convenience and the message is
+    still what its author meant to send. Callers that need provenance use
+    :func:`resolve_variables` directly.
+    """
+    try:
+        return dict(resolve_variables(KiroCrewConfig.load(), agent_name or None).values)
+    except Exception:
+        logger.debug("crew-variable resolution failed; text left unexpanded", exc_info=True)
+        return {}
+
+
+def resolve_variables(
+    config: KiroCrewConfig,
+    agent_name: str | None = None,
+    session_overrides: MutableMapping[str, str] | dict[str, str] | None = None,
+) -> VariableResolution:
+    """Merge the variable scopes for a session, narrowest winning.
+
+    Crew and workspace selection follows the same rules as
+    :func:`resolve_agent_bindings` — an unknown agent name takes the default
+    crew's bindings, and a crew naming a missing workspace falls back to
+    ``default_workspace`` — so the variables a session sees always belong to the
+    workspace it actually runs in. ``test_variables_scopes.py`` pins the two
+    functions to the same verdict.
+
+    Layering is keyed on key PRESENCE, not truthiness: an empty string at a
+    narrow scope is a deliberate override to empty, unlike the memory-store merge
+    where an empty field means inherit.
+    """
+    crew_cfg: KiroCrewAgentConfig | None = None
+    resolved_agent = ""
+    if agent_name and agent_name in config.agents:
+        crew_cfg = config.agents[agent_name]
+        resolved_agent = agent_name
+    elif config.default_agent and config.default_agent in config.agents:
+        crew_cfg = config.agents[config.default_agent]
+        resolved_agent = config.default_agent
+    elif config.agents:
+        resolved_agent = next(iter(config.agents))
+        crew_cfg = config.agents[resolved_agent]
+
+    ws_name = ""
+    if crew_cfg is not None:
+        ws_name = (
+            crew_cfg.workspace
+            if crew_cfg.workspace in config.workspaces
+            else config.default_workspace
+        )
+
+    layers: list[tuple[str, dict[str, str]]] = [(SCOPE_GLOBAL, config.variables)]
+    ws_cfg = config.workspaces.get(ws_name) if ws_name else None
+    if ws_cfg is not None:
+        layers.append((SCOPE_WORKSPACE, ws_cfg.variables))
+    if crew_cfg is not None:
+        layers.append((SCOPE_CREW, crew_cfg.variables))
+    if session_overrides:
+        # A session layer arrives over HTTP, so it is validated like any other.
+        layers.append((SCOPE_SESSION, coerce_variables(dict(session_overrides), SCOPE_SESSION)))
+
+    resolution = VariableResolution(agent_name=resolved_agent, workspace_name=ws_name)
+    for scope, pairs in layers:
+        for key, value in pairs.items():
+            if key in resolution.values:
+                resolution.shadowed.setdefault(key, []).append(resolution.winning_scope[key])
+            resolution.values[key] = value
+            resolution.winning_scope[key] = scope
+    return resolution
 
 
 def resolve_agent_bindings(
