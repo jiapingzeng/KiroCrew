@@ -72,7 +72,8 @@ from kiro_crew.apps.manager import (
     update_app,
 )
 from kiro_crew.apps.manifest import Dependencies, PlatformConfig
-from kiro_crew.apps.official_editorial import load_category_order, load_sections
+from kiro_crew.apps.official_category_order import load_category_order
+from kiro_crew.apps.official_editorial import load_sections
 from kiro_crew.apps.registry import (
     _REGISTRY_TRUST_TIERS,
     _TRUST_INDEX,
@@ -1525,14 +1526,16 @@ async def handle_registry(request: web.Request) -> web.Response:
     if not apps:
         apps = await list_registry()
     # Published rail order and layout ride along on the response the store already
-    # makes, rather than endpoints the page would have to wait on separately. Off
-    # the event loop: the first call after a cache expiry does network I/O. Both
-    # are presentation, so a failure degrades to the client's own defaults and
-    # must never 500 the store -- the same contract the catalog annotation keeps.
+    # makes, rather than endpoints the page would have to wait on separately. They
+    # are two documents with two caches, so each is loaded on its own and a failure
+    # of one leaves the other. Off the event loop: the first call after a cache
+    # expiry does network I/O. Both are presentation, so a failure degrades to the
+    # client's own defaults and must never 500 the store -- the same contract the
+    # catalog annotation keeps.
     try:
         category_order = await asyncio.to_thread(load_category_order)
     except Exception:  # noqa: BLE001 - presentation is never worth a failed store
-        logger.warning("ignoring the editorial category order", exc_info=True)
+        logger.warning("ignoring the published category order", exc_info=True)
         category_order = []
     try:
         sections = await asyncio.to_thread(load_sections)
