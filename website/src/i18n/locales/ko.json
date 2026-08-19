@@ -34,6 +34,9 @@
     "expand_sidebar": "사이드바 펼치기",
     "explore": "탐색",
     "explore_apps": "앱 탐색",
+    "focus_mode": "집중 모드",
+    "focus_mode_title": "집중 모드 · Alt+Shift+M",
+    "focus_mode_title_mac": "집중 모드 · ⌥⇧M",
     "gateway_connected": "게이트웨이 연결됨",
     "gateway_offline": "게이트웨이 오프라인",
     "gateway_offline_reconnecting": "게이트웨이 오프라인 — 재연결 중",
@@ -6709,6 +6712,7 @@
       "schedule_panel": "스케줄 패널",
       "switch_to_local": "로컬로 전환",
       "switch_to_remote_crew": "원격 크루 {{n}}(으)로 전환",
+      "toggle_focus_mode": "집중 모드 전환",
       "walk_back_mru_history": "MRU 기록 되돌아가기"
     },
     "usePanelTabs": {

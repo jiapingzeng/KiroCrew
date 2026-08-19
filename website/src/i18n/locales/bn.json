@@ -34,6 +34,9 @@
     "expand_sidebar": "সাইডবার প্রসারিত করো",
     "explore": "অন্বেষণ",
     "explore_apps": "অ্যাপ অন্বেষণ করুন",
+    "focus_mode": "ফোকাস মোড",
+    "focus_mode_title": "ফোকাস মোড · Alt+Shift+M",
+    "focus_mode_title_mac": "ফোকাস মোড · ⌥⇧M",
     "gateway_connected": "গেটওয়ে সংযুক্ত",
     "gateway_offline": "গেটওয়ে অফলাইন",
     "gateway_offline_reconnecting": "গেটওয়ে অফলাইন — আবার কানেক্ট হচ্ছে",
@@ -6798,6 +6801,7 @@
       "schedule_panel": "শিডিউল প্যানেল",
       "switch_to_local": "লোকাল-এ যাওয়া",
       "switch_to_remote_crew": "রিমোট ক্রু {{n}}-এ যাওয়া",
+      "toggle_focus_mode": "ফোকাস মোড টগল করুন",
       "walk_back_mru_history": "MRU ইতিহাসে পিছিয়ে যাওয়া"
     },
     "usePanelTabs": {

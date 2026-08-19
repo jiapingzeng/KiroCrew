@@ -34,6 +34,9 @@
     "expand_sidebar": "Développer la barre latérale",
     "explore": "Explorer",
     "explore_apps": "Explorer les applications",
+    "focus_mode": "Mode concentration",
+    "focus_mode_title": "Mode concentration · Alt+Maj+M",
+    "focus_mode_title_mac": "Mode concentration · ⌥⇧M",
     "gateway_connected": "Passerelle connectée",
     "gateway_offline": "Passerelle hors ligne",
     "gateway_offline_reconnecting": "Passerelle hors ligne — reconnexion en cours",
@@ -6887,6 +6890,7 @@
       "schedule_panel": "Panneau de planification",
       "switch_to_local": "Passer en local",
       "switch_to_remote_crew": "Passer à la crew distante {{n}}",
+      "toggle_focus_mode": "Activer/désactiver le mode concentration",
       "walk_back_mru_history": "Remonter l’historique MRU"
     },
     "usePanelTabs": {

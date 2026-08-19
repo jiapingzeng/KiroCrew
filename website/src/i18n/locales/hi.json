@@ -34,6 +34,9 @@
     "expand_sidebar": "साइडबार विस्तृत करें",
     "explore": "एक्सप्लोर",
     "explore_apps": "ऐप्स एक्सप्लोर करें",
+    "focus_mode": "फ़ोकस मोड",
+    "focus_mode_title": "फ़ोकस मोड · Alt+Shift+M",
+    "focus_mode_title_mac": "फ़ोकस मोड · ⌥⇧M",
     "gateway_connected": "गेटवे कनेक्ट है",
     "gateway_offline": "गेटवे ऑफ़लाइन",
     "gateway_offline_reconnecting": "गेटवे ऑफ़लाइन — फिर से कनेक्ट हो रहा है",
@@ -6798,6 +6801,7 @@
       "schedule_panel": "शेड्यूल पैनल",
       "switch_to_local": "स्थानीय पर जाएँ",
       "switch_to_remote_crew": "रिमोट क्रू {{n}} पर जाएँ",
+      "toggle_focus_mode": "फ़ोकस मोड टॉगल करें",
       "walk_back_mru_history": "MRU इतिहास में पीछे जाएँ"
     },
     "usePanelTabs": {

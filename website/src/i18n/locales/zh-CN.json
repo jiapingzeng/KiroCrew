@@ -34,6 +34,9 @@
     "expand_sidebar": "展开侧边栏",
     "explore": "探索",
     "explore_apps": "探索应用",
+    "focus_mode": "专注模式",
+    "focus_mode_title": "专注模式 · Alt+Shift+M",
+    "focus_mode_title_mac": "专注模式 · ⌥⇧M",
     "gateway_connected": "网关已连接",
     "gateway_offline": "网关离线",
     "gateway_offline_reconnecting": "网关离线 — 正在重连",
@@ -6709,6 +6712,7 @@
       "schedule_panel": "计划面板",
       "switch_to_local": "切换到本地",
       "switch_to_remote_crew": "切换到远程 Crew {{n}}",
+      "toggle_focus_mode": "切换专注模式",
       "walk_back_mru_history": "回溯 MRU 历史"
     },
     "usePanelTabs": {

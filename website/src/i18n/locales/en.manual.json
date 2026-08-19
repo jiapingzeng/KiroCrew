@@ -17,6 +17,9 @@
     "cpu_unavailable": "CPU: unavailable",
     "disk_unavailable": "Disk: unavailable",
     "expand_sidebar": "Expand sidebar",
+    "focus_mode": "Focus mode",
+    "focus_mode_title": "Focus mode · Alt+Shift+M",
+    "focus_mode_title_mac": "Focus mode · ⌥⇧M",
     "gateway_connected": "Gateway connected",
     "gateway_offline": "Gateway offline",
     "hide_full_changelog": "▾ Hide Full Changelog",
@@ -2336,6 +2339,7 @@
       "schedule_panel": "Schedule panel",
       "switch_to_local": "Switch to Local",
       "switch_to_remote_crew": "Switch to remote crew {{n}}",
+      "toggle_focus_mode": "Toggle focus mode",
       "walk_back_mru_history": "Walk back MRU history"
     },
     "useSceneInteraction": {
