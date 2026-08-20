@@ -27,6 +27,9 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(H, "_HOOK_STORE_PATH", Path(tmp_path) / "hooks.json")
     monkeypatch.setattr(H, "_sel", lambda: MagicMock())
     monkeypatch.setattr(H, "_legacy_hook_token", lambda: "")
+    monkeypatch.setattr(
+        H, "_installed_agent_names", lambda: {"kirocrew", "code-reviewer", "oncall"}
+    )
     # The failed-auth throttle, the replay seen-set and the in-flight session
     # registry are all process-global, so leaking them between tests would make a
     # later 401 come back as a 429, or a fresh call come back as a 409.
@@ -197,9 +200,12 @@ class TestWebhooksRead:
 
 class TestTokenEndpoints:
     @pytest.mark.asyncio
-    async def test_create_returns_secret_once(self, wired):
+    async def test_create_returns_secret_once_with_routing(self, wired):
         resp = await H.api_webhook_token_create(
-            _req("POST", "/api/webhooks/tokens", {"label": "Review Bot"})
+            _req(
+                "POST", "/api/webhooks/tokens",
+                {"label": "Review Bot", "agent": "code-reviewer"},
+            )
         )
         assert resp.status == 201
         data = await _payload(resp)
@@ -207,15 +213,35 @@ class TestTokenEndpoints:
         raw = data["token"]
         assert raw.startswith(webhooks.TOKEN_PREFIX)
         assert "token_hash" not in data["entry"]
+        assert data["entry"]["agent"] == "code-reviewer"
+        assert data["entry"]["enabled"] is True
 
         listed = await _payload(await H.api_webhooks(_req("GET", "/api/webhooks")))
         assert listed["enabled"] is True
+        assert listed["tokens"][0]["agent"] == "code-reviewer"
         assert raw not in json.dumps(listed)
+
+    @pytest.mark.asyncio
+    async def test_create_requires_an_installed_destination(self, wired):
+        missing = await H.api_webhook_token_create(
+            _req("POST", "/api/webhooks/tokens", {"label": "Review Bot"})
+        )
+        assert missing.status == 400
+        assert (await _payload(missing))["code"] == "agent_required"
+
+        unknown = await H.api_webhook_token_create(
+            _req(
+                "POST", "/api/webhooks/tokens",
+                {"label": "Review Bot", "agent": "deleted-agent"},
+            )
+        )
+        assert unknown.status == 400
+        assert (await _payload(unknown))["code"] == "destination_agent_unavailable"
 
     @pytest.mark.asyncio
     async def test_create_rejects_bad_label(self, wired):
         resp = await H.api_webhook_token_create(
-            _req("POST", "/api/webhooks/tokens", {"label": "  "})
+            _req("POST", "/api/webhooks/tokens", {"label": "  ", "agent": "kirocrew"})
         )
         assert resp.status == 400
         assert "required" in (await _payload(resp))["error"]
@@ -229,14 +255,67 @@ class TestTokenEndpoints:
     async def test_cap_returns_400_on_twenty_first(self, wired):
         for i in range(webhooks.MAX_TOKENS):
             r = await H.api_webhook_token_create(
-                _req("POST", "/api/webhooks/tokens", {"label": f"Bot {i}"})
+                _req(
+                    "POST", "/api/webhooks/tokens",
+                    {"label": f"Bot {i}", "agent": "kirocrew"},
+                )
             )
             assert r.status == 201
         resp = await H.api_webhook_token_create(
-            _req("POST", "/api/webhooks/tokens", {"label": "Too many"})
+            _req(
+                "POST", "/api/webhooks/tokens",
+                {"label": "Too many", "agent": "kirocrew"},
+            )
         )
         assert resp.status == 400
         assert "token limit reached" in (await _payload(resp))["error"]
+
+    @pytest.mark.asyncio
+    async def test_patch_updates_only_source_settings(self, wired):
+        created = await _payload(
+            await H.api_webhook_token_create(
+                _req(
+                    "POST", "/api/webhooks/tokens",
+                    {"label": "Review Bot", "agent": "code-reviewer"},
+                )
+            )
+        )
+        token_id = created["entry"]["id"]
+        resp = await H.api_webhook_token_update(
+            _req(
+                "PATCH",
+                f"/api/webhooks/tokens/{token_id}",
+                {"label": "CI callback", "agent": "oncall", "enabled": False},
+                match_info={"token_id": token_id},
+            )
+        )
+        assert resp.status == 200
+        entry = (await _payload(resp))["entry"]
+        assert entry["label"] == "CI callback"
+        assert entry["agent"] == "oncall"
+        assert entry["enabled"] is False
+        assert "token_hash" not in entry
+        assert "signing_secret" not in entry
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_unknown_fields_and_legacy(self, wired):
+        invalid = await H.api_webhook_token_update(
+            _req(
+                "PATCH", "/api/webhooks/tokens/nope", {"require_signature": False},
+                match_info={"token_id": "nope"},
+            )
+        )
+        assert invalid.status == 400
+        assert (await _payload(invalid))["code"] == "invalid_source_patch"
+
+        legacy = await H.api_webhook_token_update(
+            _req(
+                "PATCH", "/api/webhooks/tokens/legacy", {"enabled": False},
+                match_info={"token_id": "legacy"},
+            )
+        )
+        assert legacy.status == 400
+        assert (await _payload(legacy))["code"] == "legacy_credential_in_config"
 
     @pytest.mark.asyncio
     async def test_delete_unknown_is_404(self, wired):
@@ -257,12 +336,18 @@ class TestTokenEndpoints:
     async def test_revoke_one_leaves_others_authenticating(self, wired):
         a = await _payload(
             await H.api_webhook_token_create(
-                _req("POST", "/api/webhooks/tokens", {"label": "A"})
+                _req(
+                    "POST", "/api/webhooks/tokens",
+                    {"label": "A", "agent": "kirocrew"},
+                )
             )
         )
         b = await _payload(
             await H.api_webhook_token_create(
-                _req("POST", "/api/webhooks/tokens", {"label": "B"})
+                _req(
+                    "POST", "/api/webhooks/tokens",
+                    {"label": "B", "agent": "kirocrew"},
+                )
             )
         )
         resp = await H.api_webhook_token_delete(
@@ -1010,6 +1095,90 @@ class TestWebhookTest:
         resp = await H.api_webhook_test(_req("POST", "/api/webhooks/test", {}))
         assert resp.status == 409
         assert (await _payload(resp))["ok"] is False
+
+
+class TestSourceRouting:
+    @pytest.mark.asyncio
+    async def test_paused_source_is_rejected_before_body_read(self, wired):
+        raw, _secret, entry = webhooks.token_store().create(
+            "Review Bot", False, agent="code-reviewer"
+        )
+        webhooks.token_store().update(entry["id"], enabled=False)
+        req = _req(
+            "POST",
+            "/api/hooks/agent",
+            {"message": "must not be read"},
+            headers={"Authorization": f"Bearer {raw}"},
+        )
+
+        resp = await H.api_hooks_agent(req)
+
+        assert resp.status == 503
+        assert (await _payload(resp))["code"] == "source_disabled"
+        req.read.assert_not_awaited()
+        assert webhooks.run_store().list_runs()[0]["outcome"] == webhooks.OUTCOME_DISABLED
+
+    @pytest.mark.asyncio
+    async def test_conflicting_request_agent_is_rejected(self, wired):
+        raw, _secret, _entry = webhooks.token_store().create(
+            "Review Bot", False, agent="code-reviewer"
+        )
+        resp = await H.api_hooks_agent(
+            _req(
+                "POST",
+                "/api/hooks/agent",
+                {"message": "go", "agent": "oncall"},
+                headers={"Authorization": f"Bearer {raw}"},
+            )
+        )
+        body = await _payload(resp)
+        assert resp.status == 409
+        assert body["code"] == "agent_conflict"
+        assert body["destination_agent"] == "code-reviewer"
+
+    @pytest.mark.asyncio
+    async def test_mapped_agent_is_dispatched_when_body_omits_agent(self, wired):
+        raw, _secret, _entry = webhooks.token_store().create(
+            "Review Bot", False, agent="code-reviewer"
+        )
+        session_key = "hook:routed"
+        run = AsyncMock()
+        try:
+            with patch.object(H, "_run_hook_agent", new=run):
+                resp = await H.api_hooks_agent(
+                    _req(
+                        "POST",
+                        "/api/hooks/agent",
+                        {"message": "go", "sessionKey": session_key},
+                        headers={"Authorization": f"Bearer {raw}"},
+                    )
+                )
+                await asyncio.sleep(0)
+            assert resp.status == 200
+            assert run.await_args.args[4] == "code-reviewer"
+        finally:
+            H._hook_inflight_sessions.discard(session_key)
+            if H._hook_semaphore._value < H._HOOK_MAX_CONCURRENT:
+                H._hook_semaphore.release()
+
+    @pytest.mark.asyncio
+    async def test_deleted_mapped_agent_fails_closed(self, wired, monkeypatch):
+        raw, _secret, _entry = webhooks.token_store().create(
+            "Review Bot", False, agent="code-reviewer"
+        )
+        monkeypatch.setattr(H, "_installed_agent_names", lambda: {"oncall"})
+        resp = await H.api_hooks_agent(
+            _req(
+                "POST",
+                "/api/hooks/agent",
+                {"message": "go"},
+                headers={"Authorization": f"Bearer {raw}"},
+            )
+        )
+        body = await _payload(resp)
+        assert resp.status == 409
+        assert body["code"] == "destination_agent_unavailable"
+        assert body["destination_agent"] == "code-reviewer"
 
 
 class TestRejectionPathsAreRecorded:
