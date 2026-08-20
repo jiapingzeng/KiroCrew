@@ -15,6 +15,18 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "configKey": "dashboard.use_builtin_browser"
   },
   {
+    "id": "channels.enable-webex-channel",
+    "label": "Enable Webex channel",
+    "labelKey": "pages.settings.webexPanel.enable_webex_channel",
+    "description": "Start the channel at gateway boot when a token is set.",
+    "tab": "channels",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "channel": "webex"
+    }
+  },
+  {
     "id": "channels.file-sessions-in-a-folder",
     "label": "File sessions in a folder",
     "labelKey": "pages.settings.botChannelPanel.file_sessions_in_folder",
@@ -23,6 +35,50 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "occurrence": 1,
     "params": {
       "channel": "slack"
+    }
+  },
+  {
+    "id": "channels.file-sessions-in-a-folder-2",
+    "label": "File sessions in a folder",
+    "labelKey": "pages.settings.botChannelPanel.file_sessions_in_folder",
+    "tab": "channels",
+    "type": "toggle",
+    "occurrence": 2,
+    "params": {
+      "channel": "webex"
+    }
+  },
+  {
+    "id": "channels.file-sessions-in-a-folder-discord",
+    "label": "File sessions in a folder (Discord)",
+    "labelKey": "pages.settings.botChannelPanel.file_sessions_in_folder",
+    "tab": "channels",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "channel": "discord"
+    }
+  },
+  {
+    "id": "channels.file-sessions-in-a-folder-telegram",
+    "label": "File sessions in a folder (Telegram)",
+    "labelKey": "pages.settings.botChannelPanel.file_sessions_in_folder",
+    "tab": "channels",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "channel": "telegram"
+    }
+  },
+  {
+    "id": "channels.file-sessions-in-a-folder-wecom",
+    "label": "File sessions in a folder (WeCom)",
+    "labelKey": "pages.settings.botChannelPanel.file_sessions_in_folder",
+    "tab": "channels",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "channel": "wecom"
     }
   },
   {
@@ -35,6 +91,54 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "occurrence": 1,
     "params": {
       "channel": "slack"
+    }
+  },
+  {
+    "id": "channels.folder-name-2",
+    "label": "Folder name",
+    "labelKey": "pages.settings.botChannelPanel.session_folder_name",
+    "description": "Created for you when you save these settings, if it does not exist yet.",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 2,
+    "params": {
+      "channel": "webex"
+    }
+  },
+  {
+    "id": "channels.folder-name-discord",
+    "label": "Folder name (Discord)",
+    "labelKey": "pages.settings.botChannelPanel.session_folder_name",
+    "description": "Created for you when you save these settings, if it does not exist yet.",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "discord"
+    }
+  },
+  {
+    "id": "channels.folder-name-telegram",
+    "label": "Folder name (Telegram)",
+    "labelKey": "pages.settings.botChannelPanel.session_folder_name",
+    "description": "Created for you when you save these settings, if it does not exist yet.",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "telegram"
+    }
+  },
+  {
+    "id": "channels.folder-name-wecom",
+    "label": "Folder name (WeCom)",
+    "labelKey": "pages.settings.botChannelPanel.session_folder_name",
+    "description": "Created for you when you save these settings, if it does not exist yet.",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "wecom"
     }
   },
   {
@@ -83,6 +187,39 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "occurrence": 1,
     "params": {
       "channel": "slack"
+    }
+  },
+  {
+    "id": "channels.soft-context-threshold-discord",
+    "label": "Soft context threshold % (Discord)",
+    "labelKey": "pages.settings.botChannelPanel.soft_context_threshold",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "discord"
+    }
+  },
+  {
+    "id": "channels.soft-context-threshold-telegram",
+    "label": "Soft context threshold % (Telegram)",
+    "labelKey": "pages.settings.botChannelPanel.soft_context_threshold",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "telegram"
+    }
+  },
+  {
+    "id": "channels.soft-context-threshold-wecom",
+    "label": "Soft context threshold % (WeCom)",
+    "labelKey": "pages.settings.botChannelPanel.soft_context_threshold",
+    "tab": "channels",
+    "type": "input",
+    "occurrence": 1,
+    "params": {
+      "channel": "wecom"
     }
   },
   {
@@ -653,11 +790,95 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "configKey": "telemetry.enabled"
   },
   {
+    "id": "security.denied-commands",
+    "label": "Denied Commands",
+    "labelKey": "pages.settings.securityPanel.denied_commands",
+    "tab": "security",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "section": "rules"
+    }
+  },
+  {
+    "id": "security.governance-policy",
+    "label": "Governance Policy",
+    "labelKey": "pages.settings.securityPanel.governance_policy",
+    "tab": "security",
+    "type": "select",
+    "occurrence": 1,
+    "params": {
+      "section": "governance"
+    }
+  },
+  {
+    "id": "security.how-long-auto-approve-stays-on",
+    "label": "How long auto-approve stays on",
+    "labelKey": "pages.settings.securityPanel.yolo_duration_title",
+    "tab": "security",
+    "type": "buttonGroup",
+    "occurrence": 1,
+    "params": {
+      "section": "approval"
+    },
+    "configKey": "agent.yolo_duration"
+  },
+  {
+    "id": "security.live-security-posture",
+    "label": "Live Security Posture",
+    "labelKey": "pages.settings.securityPanel.live_security_posture",
+    "tab": "security",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "section": "posture"
+    }
+  },
+  {
     "id": "security.trust-every-third-party-app",
     "label": "Trust every third-party app",
     "labelKey": "pages.settings.securityPanel.trustedApps.allow_all_label",
     "description": "Off by default. When on, every third-party app you install can run its own code straight away, without asking you first.",
     "tab": "security",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "section": "apps"
+    }
+  },
+  {
+    "id": "security.trust-this-machine-s-tailnet-name",
+    "label": "Trust this machine's tailnet name",
+    "labelKey": "pages.settings.securityPanel.tailnet_title",
+    "tab": "security",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "section": "tailnet"
+    }
+  },
+  {
+    "id": "shortcuts.enable-shortcuts",
+    "label": "Enable shortcuts",
+    "labelKey": "pages.settings.shortcutsPanel.enable_shortcuts",
+    "tab": "shortcuts",
+    "type": "toggle",
+    "occurrence": 1
+  },
+  {
+    "id": "shortcuts.search-everywhere",
+    "label": "Search Everywhere",
+    "labelKey": "components.shortcutsModal.search_everywhere",
+    "tab": "shortcuts",
+    "type": "buttonGroup",
+    "occurrence": 1
+  },
+  {
+    "id": "shortcuts.use-ctrl-not-option-for-chat-1-9",
+    "label": "Use ⌃ Ctrl (not ⌥ Option) for chat 1–9",
+    "labelKey": "pages.settings.shortcutsPanel.use_ctrl_not_option_for_chat_1_9",
+    "description": "Bind chat-tab switching to Ctrl+digit instead of Option+digit",
+    "tab": "shortcuts",
     "type": "toggle",
     "occurrence": 1
   },
