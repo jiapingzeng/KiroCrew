@@ -90,6 +90,11 @@ const CATEGORY_DESCRIPTION_KEY: Record<SoundCategory, string> = {
 const PRIORITY_SENTINEL = 'Channel default'
 const PRIORITY_OPTIONS = [PRIORITY_SENTINEL, 'critical', 'default', 'passive']
 
+/** Shared style for the sound-preview buttons: the Sound card's "Test
+ *  notification" button and the per-category "Test" buttons must stay
+ *  visually identical, so both compose from this one string. */
+const TEST_BTN_CLASS = 'px-3 py-1.5 rounded-md border border-border text-[12px] font-medium cursor-pointer bg-transparent text-muted hover:text-text hover:border-border-strong disabled:opacity-40 disabled:cursor-not-allowed transition-all font-body'
+
 /** Human label for a channel within its group (drop the source prefix apps
  *  and system channels share with their group header). */
 function channelLabel(c: NotificationChannel): string {
@@ -253,6 +258,27 @@ export function NotificationsPanel() {
               className="w-full accent-[var(--accent)]"
             />
           </div>
+          {/* Plays the fallback ('all') preset at the current volume — the same
+              sample a real notification with no category override would play —
+              so the user can dial in volume without triggering a real event.
+              Labelled "Test sound", not "Test notification": no notification is
+              created or delivered, and a user debugging missing notifications
+              must not conclude delivery works because a tone played. Disabled
+              conditions mirror the per-category Test buttons below: sound off,
+              fallback set to none, or volume at zero all mean a click would be
+              a silent no-op. This button OWNS the fallback preview — the 'all'
+              row in the per-category card deliberately has no trailing Test
+              button, because it would run this exact action. */}
+          <div className="py-1.5">
+            <button
+              type="button"
+              onClick={() => playPreset(fallback, settings.volume)}
+              disabled={!settings.enabled || fallback === 'none' || settings.volume === 0}
+              className={TEST_BTN_CLASS}
+            >
+              {i18nT('pages.settings.notificationsPanel.test_sound')}
+            </button>
+          </div>
         </SettingsCard>
       </SettingsSection>
 
@@ -289,14 +315,20 @@ export function NotificationsPanel() {
                     disabled={!settings.enabled}
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => playPreset(effective, settings.volume)}
-                  disabled={!settings.enabled || effective === 'none' || settings.volume === 0}
-                  className="mb-2 px-3 py-1.5 rounded-md border border-border text-[12px] font-medium cursor-pointer bg-transparent text-muted hover:text-text hover:border-border-strong disabled:opacity-40 disabled:cursor-not-allowed transition-all font-body"
-                >
-                  {i18nT('pages.settings.notificationsPanel.test')}
-                </button>
+                {/* The 'all' row has no trailing Test button: the Sound card's
+                    "Test sound" button above runs the identical fallback preview,
+                    and two identically-acting controls on one page invite users
+                    to hunt for a difference that does not exist. */}
+                {cat !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => playPreset(effective, settings.volume)}
+                    disabled={!settings.enabled || effective === 'none' || settings.volume === 0}
+                    className={`mb-2 ${TEST_BTN_CLASS}`}
+                  >
+                    {i18nT('pages.settings.notificationsPanel.test')}
+                  </button>
+                )}
               </div>
             )
           })}
