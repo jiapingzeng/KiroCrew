@@ -235,6 +235,8 @@ describe('crew editor — collision warning', () => {
     // has already happened.
     await renderRoster()
     const sheet = await openEditor('oncall')
+    // Both the picker and the warning live on the workspace/memory pane.
+    fireEvent.click(within(sheet).getByTestId('crew-rail-place'))
 
     // oncall starts on its own store, so nothing collides yet.
     expect(within(sheet).queryByText(/Also used by/)).not.toBeInTheDocument()
