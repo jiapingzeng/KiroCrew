@@ -2091,7 +2091,15 @@ export const api = {
     post('/api/chat/folders', { name, parent_id: parentId || '', ...(config ?? {}) }).then(j),
   updateChatFolder: (id: string, body: object) => patch('/api/chat/folders/' + encodeURIComponent(id), body).then(j),
   deleteChatFolder: (id: string) => del('/api/chat/folders/' + encodeURIComponent(id)).then(j),
-  setSlotFolder: (slot: string, folderId: string | null) => patch('/api/chat/slots/' + encodeURIComponent(slot) + '/folder', { folder_id: folderId || '' }).then(j),
+  /** Assign a session to a folder. Pass `expectedFolderId` to make it a
+   *  compare-and-set: the server refuses with 409 `folder_conflict` when the
+   *  session has since moved, so a replayed decision (undo) cannot overwrite a
+   *  newer placement made by another client. Omit it for a live user choice. */
+  setSlotFolder: (slot: string, folderId: string | null, expectedFolderId?: string | null) =>
+    patch('/api/chat/slots/' + encodeURIComponent(slot) + '/folder', {
+      folder_id: folderId || '',
+      ...(expectedFolderId !== undefined ? { expected_folder_id: expectedFolderId || '' } : {}),
+    }).then(j),
   setSlotColor: (slot: string, colorIndex: number | null) => patch('/api/chat/slots/' + encodeURIComponent(slot) + '/color', { color_index: colorIndex }).then(j),
   /** Set a custom per-session color (#rrggbb). The backend clears color_index
    *  when a hex is set and vice versa (mutual exclusion), so callers send one

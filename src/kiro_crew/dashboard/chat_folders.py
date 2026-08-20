@@ -609,8 +609,48 @@ async def api_chat_slot_folder(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "invalid JSON"}, status=400)
     folder_id = str(body.get("folder_id") or "")
+    # Optional compare-and-set, checked FIRST — before the destination is
+    # validated. An unconditional write is fine for a user who is choosing a
+    # destination right now, but NOT for one that replays a decision taken
+    # seconds ago: the sidebar's drag-move undo posts the folder it expects the
+    # session to still be in, so it cannot overwrite a NEWER placement made by
+    # another client whose broadcast has not arrived here yet. Omit the field and
+    # the write stays unconditional, exactly as before.
+    #
+    # Order matters: if the destination check ran first, an undo whose ORIGIN
+    # folder had meanwhile been deleted would be refused as 400 "folder not
+    # found" — a refusal that says nothing about where the session is, so the
+    # client would fall back to its stale idea of the placement. Answering the
+    # staleness question first turns that case into a 409 carrying the truth.
+    #
+    # The compare and the assignment below are separated by no `await`, so no
+    # other handler on this loop can interleave between them — unlike the
+    # folder-existence check, this really is atomic.
+    conditional = "expected_folder_id" in body
+    if conditional:
+        expected = str(body.get("expected_folder_id") or "")
+        if expected != (slot.folder_id or ""):
+            return web.json_response(
+                {
+                    "error": "folder changed",
+                    "code": "folder_conflict",
+                    # The authoritative placement, so a client that lost the race
+                    # can show where the session actually is instead of guessing.
+                    "folder_id": slot.folder_id or "",
+                },
+                status=409,
+            )
     if folder_id and not any(f["id"] == folder_id for f in state._folders):
-        return web.json_response({"error": "folder not found"}, status=400)
+        # A CONDITIONAL write is restoring a placement, not choosing one, so a
+        # destination deleted since then is not a bad request — unfiled IS where
+        # that session belongs now, and it is already what the sidebar shows for
+        # an unknown folder id. Refusing would strand the undo instead: the
+        # client's folder list can be a broadcast behind, so it cannot know the
+        # origin is gone, and the button would do nothing at all. An
+        # unconditional write is a live choice and still gets the 400.
+        if not conditional:
+            return web.json_response({"error": "folder not found"}, status=400)
+        folder_id = ""
     previous = slot.folder_id
     if folder_id != slot.folder_id:
         slot._folder_changed = True  # re-inject [FOLDER] breadcrumb on next turn

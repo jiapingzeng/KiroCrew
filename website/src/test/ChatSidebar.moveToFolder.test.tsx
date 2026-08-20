@@ -108,4 +108,43 @@ describe('useMoveSlotToFolder', () => {
     expect(folderOf()).toBe('f2')
     await waitFor(() => expect(folderOf()).toBe('f1'))  // rolled back to Alpha
   })
+
+  // ── Compare-and-set (the drag-move undo path) ──────────────────────────────
+  // Undo REPLAYS a decision taken up to 8s ago, so it must not overwrite a
+  // newer placement another client made in that window. It sends the folder it
+  // expects the session to still be in; the server refuses on a mismatch.
+
+  it('passes the expectation through when the caller supplies one', async () => {
+    seedStore('f2')
+    const move = renderMove()
+    act(() => move.current(SLOT, null, { expectFolderId: 'f2' }))
+    await waitFor(() => expect(mocks.setSlotFolder).toHaveBeenCalledWith(SLOT, null, 'f2'))
+  })
+
+  it('lands on the server’s folder — not the caller’s — when the write is refused', async () => {
+    // Another client moved the session to Beta and our broadcast has not
+    // arrived, so undo's inverse (back to Alpha) is refused with the truth.
+    mocks.setSlotFolder.mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), {
+        status: 409,
+        body: JSON.stringify({ error: 'folder changed', code: 'folder_conflict', folder_id: 'f2' }),
+      }),
+    )
+    seedStore('f1')
+    const move = renderMove()
+    act(() => move.current(SLOT, null, { expectFolderId: 'f1' }))
+    // Not 'f1' (the stale rollback) and not '' (the refused optimistic write):
+    // the sidebar must show where the session actually is.
+    await waitFor(() => expect(folderOf()).toBe('f2'))
+  })
+
+  it('still rolls back on a 409 that is not a folder conflict', async () => {
+    mocks.setSlotFolder.mockRejectedValueOnce(
+      Object.assign(new Error('nope'), { status: 409, body: JSON.stringify({ error: 'something else' }) }),
+    )
+    seedStore('f1')
+    const move = renderMove()
+    act(() => move.current(SLOT, null, { expectFolderId: 'f1' }))
+    await waitFor(() => expect(folderOf()).toBe('f1'))
+  })
 })
