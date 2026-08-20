@@ -6,7 +6,8 @@
       "session_expired": "La sesión ha caducado.",
       "session_expired_sign_in_again": "La sesión ha caducado. Ejecuta kirocrew token en una terminal y pega la URL en el banner de la parte superior de esta página para volver a iniciar sesión.",
       "stream_ended_without_completion": "La transmisión terminó sin completarse",
-      "unexpected_server_response": "Respuesta inesperada del servidor"
+      "unexpected_server_response": "Respuesta inesperada del servidor",
+      "path_copied_fallback": "Ruta copiada — no hay ningún escritorio disponible para abrirla aquí."
     }
   },
   "app": {
@@ -1490,13 +1491,9 @@
         "copy_path_2": "Copiar ruta: {{path}}",
         "download": "Descargar",
         "more_options": "Más opciones",
-        "open_in_file_explorer": "Abrir en el Explorador de archivos",
-        "open_in_finder": "Abrir en Finder",
-        "path_copied_to_clipboard_no_desktop_available": "Ruta copiada al portapapeles (no hay escritorio disponible)",
         "reload": "Recargar",
         "select_a_file_to_view": "Selecciona un archivo para verlo",
         "sensitive_file_avoid_sharing_your_screen_while_v": "Archivo sensible — evita compartir tu pantalla mientras ves credenciales",
-        "show_in_file_manager": "Mostrar en el gestor de archivos",
         "tip_ctrl_cmd_f_to_search": "Consejo: Ctrl/Cmd+F para buscar",
         "truncated": "· truncado"
       },
@@ -5660,7 +5657,6 @@
       "open_in_file_explorer": "Abrir en el Explorador de archivos",
       "open_in_finder": "Abrir en Finder",
       "open_with_default_app": "Abrir con la aplicación predeterminada",
-      "path_copied_to_clipboard_no_desktop_available": "Ruta copiada al portapapeles (no hay escritorio disponible)",
       "preview": "Vista previa",
       "previous_match": "Coincidencia anterior",
       "previous_shift_enter": "Anterior (Shift+Enter)",
@@ -6840,6 +6836,10 @@
       "no_matching_skills": "No matching skills",
       "skills_hint": "Skills loaded when this hook matches — no command needed.",
       "selected": "Selected"
+    },
+    "filePathMenu": {
+      "copy_path": "Copiar ruta",
+      "reveal_failed": "No se pudo abrir esta ruta en el equipo donde se ejecuta Kiro Crew."
     }
   },
   "hooks": {

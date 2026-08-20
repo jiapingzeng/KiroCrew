@@ -1578,7 +1578,7 @@ export const api = {
   // the enterprise ceiling is file-authored and un-editable via the UI.
   governancePolicy: () => get('/api/governance/policy').then(j) as Promise<GovernancePolicyData>,
   suggestions: (force?: boolean) => fetch(`/api/suggestions${force ? '?force=1' : ''}`).then(j) as Promise<{ suggestions: string[]; generated_at: number; stale: boolean }>,
-  branding: () => fetch('/api/dashboard/branding').then(j) as Promise<{ bot_name: string; avatar: string }>,
+  branding: () => fetch('/api/dashboard/branding').then(j) as Promise<{ bot_name: string; avatar: string; direct_local?: boolean }>,
   // Instances (multi-instance management) — owner-only, gated by instances.enabled.
   // listInstances throws ApiError(403) when the feature is disabled; callers
   // should catch and render the enable toggle rather than an error. `active`
@@ -2242,7 +2242,10 @@ export const api = {
   // neither, so the backend answers with `copy` and the path goes to the
   // clipboard instead of the call silently doing nothing.
   revealPath: (path: string, action: 'open' | 'reveal' = 'reveal') => post('/api/reveal', { path, action }).then(j).then((r: { copy?: string }) => {
-    if (r.copy) copyToClipboard(r.copy)
+    if (r.copy) {
+      copyToClipboard(r.copy)
+      alert(i18nT('api.client.path_copied_fallback'))
+    }
     return r
   }),
   collectDiagnostics: (body: { note: string; include_logs: boolean }) =>

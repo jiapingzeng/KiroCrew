@@ -6,7 +6,8 @@
       "session_expired": "セッションの有効期限が切れました。",
       "session_expired_sign_in_again": "セッションの有効期限が切れました。ターミナルで kirocrew token を実行し、このページ上部のバナーに URL を貼り付けて再度サインインしてください。",
       "stream_ended_without_completion": "ストリームが完了せずに終了しました",
-      "unexpected_server_response": "予期しないサーバーレスポンス"
+      "unexpected_server_response": "予期しないサーバーレスポンス",
+      "path_copied_fallback": "パスをコピーしました — ここで開けるデスクトップがありません。"
     }
   },
   "app": {
@@ -1458,13 +1459,9 @@
         "copy_path_2": "パスをコピー：{{path}}",
         "download": "ダウンロード",
         "more_options": "その他のオプション",
-        "open_in_file_explorer": "エクスプローラーで開く",
-        "open_in_finder": "Finder で開く",
-        "path_copied_to_clipboard_no_desktop_available": "パスをクリップボードにコピーしました（デスクトップ環境がありません）",
         "reload": "再読み込み",
         "select_a_file_to_view": "表示するファイルを選択",
         "sensitive_file_avoid_sharing_your_screen_while_v": "機密ファイル — 認証情報を表示しながら画面を共有しないでください",
-        "show_in_file_manager": "ファイルマネージャーに表示",
         "tip_ctrl_cmd_f_to_search": "ヒント: Ctrl/Cmd+Fで検索",
         "truncated": "· 省略"
       },
@@ -5496,7 +5493,6 @@
       "open_in_file_explorer": "エクスプローラーで開く",
       "open_in_finder": "Finder で開く",
       "open_with_default_app": "デフォルトアプリで開く",
-      "path_copied_to_clipboard_no_desktop_available": "パスをクリップボードにコピーしました（デスクトップ環境がありません）",
       "preview": "プレビュー",
       "previous_match": "前の一致",
       "previous_shift_enter": "前へ (Shift+Enter)",
@@ -6662,6 +6658,10 @@
       "no_matching_skills": "No matching skills",
       "skills_hint": "Skills loaded when this hook matches — no command needed.",
       "selected": "Selected"
+    },
+    "filePathMenu": {
+      "copy_path": "パスをコピー",
+      "reveal_failed": "Kiro Crew を実行しているマシンでこのパスを開けませんでした。"
     }
   },
   "hooks": {

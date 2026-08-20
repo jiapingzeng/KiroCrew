@@ -47,6 +47,7 @@ import GithubLogo from './icons/GithubLogo'
 import GitlabLogo from './icons/GitlabLogo'
 import DiffBlock from './DiffBlock'
 import EditableCodeBlock from './EditableCodeBlock'
+import FilePathMenu from './FilePathMenu'
 import { SmoothResize } from './SmoothResize'
 import type { ContentBlock } from '../types'
 
@@ -746,39 +747,47 @@ function InlineCode({ children, ...props }: { children?: React.ReactNode } & Rec
     if (e.ctrlKey || e.metaKey) { copyToClipboard(raw); return }
     activatePath(path, kind, e.shiftKey, actions, targetLine, targetEndLine)
   }
+  // Right-click opens the shared file-path menu (Open in default app / reveal /
+  // copy path), additive to the existing click/shift-click activation. The menu
+  // items self-gate on directLocal, so a remote session sees only Copy path.
+  // `kind` is threaded through so a directory chip hides "Open with default
+  // app" — the reveal endpoint 400s an `open` on a directory, which would land
+  // the user on an error for a click they cannot fix.
   return (
-    <code
-      className={`${CHIP_BASE} cursor-pointer hover:underline`}
-      role="button"
-      tabIndex={0}
-      onClick={act}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') act(e) }}
-      {...safeProps}
-      data-path={path}
-      data-path-kind={kind}
-      data-path-line={targetLine}
-      data-path-end-line={targetEndLine}
-      // The resolved path leads the tooltip, not just the instruction. A native
-      // tooltip paints in the browser's own layer, above page content, and any
-      // element overlaying the chip must be pointer-events-none to let the click
-      // reach it — so hovering always discloses the real target even when
-      // surrounding markup visually covers the chip's text. It also shows a long
-      // path in full when layout truncates it.
-      //
-      // `raw`, not `path`, so a `file:447` chip discloses the line it will jump
-      // to. That keeps the disclosure honest without a second catalog string:
-      // the location is already in the text the user is hovering.
-      title={`${raw}\n${revealHint}\n${i18nT('components.markdownRenderer.ctrl_click_to_copy')}`}
-    >
-      <Glyph size={12} aria-hidden="true" className="inline align-middle mr-1 opacity-70" />
-      {targetLine != null && raw.length > stripped.length
-        // Keep the location suffix atomic. A range is the case that actually
-        // misleads: broken across lines, `…2026.md:10-` / `16` reads as a citation
-        // ending at line 10 until the eye reaches the next line. The path itself
-        // stays breakable, since that is what lets a long citation wrap at all.
-        ? <>{stripped}<span className="whitespace-nowrap">{raw.slice(stripped.length)}</span></>
-        : children}
-    </code>
+    <FilePathMenu filePath={path} kind={kind}>
+      <code
+        className={`${CHIP_BASE} cursor-pointer hover:underline`}
+        role="button"
+        tabIndex={0}
+        onClick={act}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') act(e) }}
+        {...safeProps}
+        data-path={path}
+        data-path-kind={kind}
+        data-path-line={targetLine}
+        data-path-end-line={targetEndLine}
+        // The resolved path leads the tooltip, not just the instruction. A native
+        // tooltip paints in the browser's own layer, above page content, and any
+        // element overlaying the chip must be pointer-events-none to let the click
+        // reach it — so hovering always discloses the real target even when
+        // surrounding markup visually covers the chip's text. It also shows a long
+        // path in full when layout truncates it.
+        //
+        // `raw`, not `path`, so a `file:447` chip discloses the line it will jump
+        // to. That keeps the disclosure honest without a second catalog string:
+        // the location is already in the text the user is hovering.
+        title={`${raw}\n${revealHint}\n${i18nT('components.markdownRenderer.ctrl_click_to_copy')}`}
+      >
+        <Glyph size={12} aria-hidden="true" className="inline align-middle mr-1 opacity-70" />
+        {targetLine != null && raw.length > stripped.length
+          // Keep the location suffix atomic. A range is the case that actually
+          // misleads: broken across lines, `…2026.md:10-` / `16` reads as a citation
+          // ending at line 10 until the eye reaches the next line. The path itself
+          // stays breakable, since that is what lets a long citation wrap at all.
+          ? <>{stripped}<span className="whitespace-nowrap">{raw.slice(stripped.length)}</span></>
+          : children}
+      </code>
+    </FilePathMenu>
   )
 }
 

@@ -6,7 +6,8 @@
       "session_expired": "Session expired.",
       "session_expired_sign_in_again": "Session expired. Run kirocrew token in a terminal, then paste the URL into the banner at the top of this page to sign back in.",
       "stream_ended_without_completion": "Stream ended without completion",
-      "unexpected_server_response": "Unexpected server response"
+      "unexpected_server_response": "Unexpected server response",
+      "path_copied_fallback": "Path copied — no desktop is available to open it here."
     }
   },
   "app": {
@@ -272,11 +273,7 @@
     "fileExplorer": {
       "fileViewer": {
         "copy_path_2": "Copy path: {{path}}",
-        "more_options": "More options",
-        "open_in_file_explorer": "Open in File Explorer",
-        "open_in_finder": "Open in Finder",
-        "path_copied_to_clipboard_no_desktop_available": "Path copied to clipboard (no desktop available)",
-        "show_in_file_manager": "Show in file manager"
+        "more_options": "More options"
       },
       "searchPanel": {
         "search_failed": "search failed",
@@ -1737,7 +1734,6 @@
       "open_in_file_explorer": "Open in File Explorer",
       "open_in_finder": "Open in Finder",
       "open_with_default_app": "Open with default app",
-      "path_copied_to_clipboard_no_desktop_available": "Path copied to clipboard (no desktop available)",
       "preview": "Preview",
       "refresh_file_re_read_from_disk": "Refresh file (re-read from disk)",
       "save": "Save",
