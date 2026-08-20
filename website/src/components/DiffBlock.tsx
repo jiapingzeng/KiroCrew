@@ -150,7 +150,14 @@ export default memo(function DiffBlock({ code, complete, onFileOpen, pathHint, s
     () => ({
       diffStyle: (sideBySide ? 'split' : 'unified') as 'split' | 'unified',
       overflow: 'wrap' as const,
-      disableFileHeader: false,
+      // Pierre's own file header is the block's title row (file icon, name, +/-
+      // counts) — shown only when the PATCH ITSELF named a file. A prose
+      // `pathHint` must not un-hide it: the hint is a guess about the
+      // surrounding text, and a headerless snippet renders under a synthesized
+      // placeholder name, so a wrong guess would title the block with a file
+      // that does not exist. The hint still drives the Open button, which is
+      // probed before it appears.
+      disableFileHeader: !extracted?.path,
       // A chat diff is a snippet, not a review surface: `simple` is a bare
       // hairline with no label and no expand control, which keeps a short block
       // reading as continuous code. Every other surface keeps `line-info`, whose
@@ -159,7 +166,7 @@ export default memo(function DiffBlock({ code, complete, onFileOpen, pathHint, s
       hunkSeparators: 'simple' as const,
       unsafeCSS: PIERRE_COMPACT_HEADER_CSS + PIERRE_WRAP_NO_HSCROLL_CSS + PIERRE_SEPARATOR_BG_CSS,
     }),
-    [sideBySide],
+    [sideBySide, extracted?.path],
   )
 
   const copy = () => { copyToClipboard(code); setCopied(true); setTimeout(() => setCopied(false), 1500) }

@@ -145,3 +145,54 @@ const RAIL_MIN_W = 200
     expect(files[0].hunks).toHaveLength(2)
   })
 })
+
+/** A ```diff fence carrying only change lines — no `diff --git`, no `---`/`+++`,
+ *  no `@@`. Pierre needs a NAMED file-header pair to see a file at all, so
+ *  without synthesis this parses to zero files and the block degrades to plain
+ *  text with no diff colouring. */
+describe('normalizePatchHunks: headerless snippets', () => {
+  const HEADERLESS_ADDITIONS = `+// Dedupe on account so the policy carries each principal once.
++Set<String> accounts = new LinkedHashSet<>();
++for (DeploymentGroupName g : DeploymentGroupName.values()) {
++    accounts.add(BatchMonitorAccounts.getAWSAccount(g));
++}
+`
+  const HEADERLESS_MIXED = `-const old = 1
++const next = 2
+ const same = 3
+`
+
+  const filesOf = (patch: string) => parsePatchFiles(normalizePatchHunks(patch)).flatMap(p => p.files)
+
+  it('renders additions-only snippets that would otherwise parse to zero files', () => {
+    expect(parsePatchFiles(HEADERLESS_ADDITIONS).flatMap(p => p.files)).toHaveLength(0)
+    const files = filesOf(HEADERLESS_ADDITIONS)
+    expect(files).toHaveLength(1)
+    expect(files[0].hunks?.length).toBe(1)
+  })
+
+  it('derives the synthesized hunk counts from the body it actually has', () => {
+    // Side counts, not marker counts: the context line belongs to both sides,
+    // so one deletion + one context is `-1,2` and one addition + one context
+    // is `+1,2`. Asserting the header text pins the arithmetic at its source.
+    expect(normalizePatchHunks(HEADERLESS_MIXED)).toContain('@@ -1,2 +1,2 @@')
+    const hunk = filesOf(HEADERLESS_MIXED)[0].hunks![0]
+    expect(hunk.additionCount).toBe(2)
+    expect(hunk.deletionCount).toBe(2)
+  })
+
+  it('names the synthesized section so additions-only snippets get a real hunk', () => {
+    expect(normalizePatchHunks(HEADERLESS_ADDITIONS)).toContain('@@ -1,0 +1,5 @@')
+  })
+
+  it('leaves prose with no change lines alone, so plain text stays plain text', () => {
+    const prose = 'just some text\nwith no diff markers\n'
+    expect(normalizePatchHunks(prose)).toBe(prose)
+  })
+
+  it('does not synthesize a second file section for a patch that already names one', () => {
+    const files = filesOf(VALID_PATCH)
+    expect(files).toHaveLength(1)
+    expect(files[0].name).not.toBe('snippet')
+  })
+})

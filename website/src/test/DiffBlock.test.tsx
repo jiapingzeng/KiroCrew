@@ -80,17 +80,25 @@ describe('DiffBlock', () => {
     expect(onFileOpen).toHaveBeenCalledWith('file.ts')
   })
 
-  /* Pierre builds its file header from the `---`/`+++` lines; hunks alone give
-     it nothing to title, so it renders the body and NO metadata slot at all.
-     Asserting only that Open is absent would therefore pass even with the path
-     guard deleted — the assertion has to be that NOTHING is slotted, which is
-     also the pin on this known limitation (a headerless patch loses Open,
-     Split and Copy together). */
-  it('slots no controls at all for a headerless patch', async () => {
+  it('renders a headerless patch as a diff, with Copy but no Open', async () => {
+    // A headerless patch used to parse to zero files and degrade to plain text,
+    // losing Open, Split and Copy together. It now renders through a synthesized
+    // file section, so the patch-level controls are back — but Open still must
+    // not appear, because there is no path to open. Asserting Copy PRESENT is
+    // what makes the Open assertion falsifiable: both would vanish together if
+    // the block fell back to plain text again, so a bare "Open is absent" check
+    // would pass for the wrong reason.
     const noPathDiff = `@@ -1,2 +1,2 @@\n-old\n+new`
     render(<DiffBlock code={noPathDiff} complete={true} onFileOpen={() => {}} />)
-    await expect(screen.findByTitle('Copy patch', undefined, { timeout: 1500 })).rejects.toThrow()
+    await screen.findByTitle('Copy patch', undefined, { timeout: 2000 })
     expect(screen.queryByTitle(/^Open .* in side panel$/)).not.toBeInTheDocument()
+    // The synthesized name is a parser placeholder, never shown to the reader.
+    const shadowText = (root: Element | ShadowRoot): string =>
+      Array.from(root.querySelectorAll('*'))
+        .map(el => (el.shadowRoot ? shadowText(el.shadowRoot) : ''))
+        .concat(root.textContent ?? '')
+        .join(' ')
+    expect(shadowText(document.body)).not.toContain('snippet')
   })
 
   it('does not probe or offer View file when the headers name only /dev/null', async () => {

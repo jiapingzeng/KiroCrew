@@ -7,3 +7,14 @@
 export function withUnifiedPatchHeaders(path: string, patch: string): string {
   return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patch}`
 }
+
+/** Placeholder path for a patch that arrived with no file section at all, so it
+ *  can satisfy Pierre's named-header requirement. Never a real file, and never
+ *  shown: surfaces that display Pierre's file header hide it when the patch
+ *  named no file of its own. */
+export const PATCH_SNIPPET_NAME = 'snippet'
+
+/** The `---`/`+++` pair alone, for a caller assembling a patch line by line. */
+export function snippetFileHeaderLines(): [string, string] {
+  return [`--- a/${PATCH_SNIPPET_NAME}`, `+++ b/${PATCH_SNIPPET_NAME}`]
+}

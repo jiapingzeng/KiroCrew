@@ -11,6 +11,7 @@ import { EXTENSION_TO_FILE_FORMAT, parsePatchFiles, setCustomExtension } from '@
 import { File, FileDiff, MultiFileDiff, Virtualizer, WorkerPoolContext } from '@pierre/diffs/react'
 import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker'
 import { useIsDark } from '../hooks/useIsDark'
+import { snippetFileHeaderLines } from '../components/unifiedPatchHeaders'
 import { PlainCodeFallback } from './PlainCodeFallback'
 import {
   PIERRE_EXTENSION_OVERRIDES,
@@ -122,6 +123,22 @@ export function normalizePatchHunks(patch: string): string {
     if (!(lines[minus + 1] ?? '').startsWith('+++ ')) return false
     if (!hunkBody[minus]) return true
     return (lines[minus - 1] ?? '').startsWith('diff ') || (lines[minus + 2] ?? '').startsWith('@@')
+  }
+  // A patch with NO file section at all — just `+`/`-` lines, the shape an
+  // agent writes when it pastes a snippet under a ```diff fence. Pierre needs a
+  // NAMED `--- `/`+++ ` pair to recognize a file (empty names and a bare `@@`
+  // both parse to zero files), so synthesize one and let the pass below add the
+  // hunk header. The name is a placeholder, not a claim about any real file:
+  // call sites that show Pierre's file header suppress it when they have no
+  // path of their own (see DiffBlock).
+  if (
+    !lines.some(l => l.startsWith('diff ')) &&
+    !lines.some((_, i) => isFileHeader(i)) &&
+    lines.some(l => /^[+-](?![+-][+-] )/.test(l))
+  ) {
+    lines.unshift(...snippetFileHeaderLines())
+    hunkBody = markHunkBodies()
+    changed = true
   }
   /** Body extent + line tallies for the hunk starting after `start`. */
   const measure = (start: number) => {
