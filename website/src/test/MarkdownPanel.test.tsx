@@ -376,7 +376,15 @@ describe('breadcrumbSegments', () => {
  * `onRevealConsumed` arrow out of the dependency array.
  */
 describe('MarkdownPanel line-reveal effect', () => {
+  // Line endings normalized to LF at read time. This block asserts on the SOURCE
+  // TEXT, and on a Windows checkout the file arrives with CRLF endings (git's
+  // `core.autocrlf`), which puts a `\r` between the effect's closing `])` and the
+  // end of the line — so a `$`-anchored pattern cannot match and two of these
+  // tests fail for every Windows contributor while passing on CI's Linux runner.
+  // Normalizing once here fixes the whole block rather than adding `\r?` to each
+  // pattern, and keeps a future assertion from re-introducing the same trap.
   const src = readFileSync(join(__dirname, '..', 'components', 'MarkdownPanel.tsx'), 'utf8')
+    .replace(/\r\n/g, '\n')
 
   /** The reveal `useEffect` call, from `useEffect(` through its closing line.
    *  Only the effect's own closer sits at two-space indentation. */
