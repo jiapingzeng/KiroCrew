@@ -2952,7 +2952,7 @@ def _expand_dollar_skills(
         return message, 0
     skills = _get_skills(state)
     try:
-        resolved = skills.resolve_dollar_skills(message)
+        resolved = skills.resolve_dollar_skills(message, slot.project or None)
     except Exception:
         logger.exception("dollar-skill resolution failed")
         # Audit the failed resolution attempt — the security-controls guideline

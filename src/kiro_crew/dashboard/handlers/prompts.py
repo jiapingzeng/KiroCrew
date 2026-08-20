@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import re
 from pathlib import Path
@@ -14,6 +15,12 @@ from kiro_crew.config.loader import KiroCrewConfig
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.executors import discovery_executor
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
+from kiro_crew.skill_trust import (
+    grant_project_trust,
+    is_project_trusted,
+    list_trusted_projects,
+    revoke_project_trust,
+)
 
 from ._shared import (
     _capability_manager,
@@ -217,6 +224,92 @@ async def api_skills(request: web.Request) -> web.Response:
         project_dir,
     )
     return web.json_response(result)
+
+
+def _trust_snapshot(project_dir: Path | None) -> dict[str, Any]:
+    """Blocking read of trust state for *project_dir* plus every stored grant."""
+    return {
+        "project": str(project_dir) if project_dir else "",
+        "trusted": is_project_trusted(project_dir) if project_dir else False,
+        "grants": list_trusted_projects(),
+    }
+
+
+async def api_skills_trust(request: web.Request) -> web.Response:
+    """Report the requesting chat's project-skills trust state and all grants."""
+    state: DashboardState = request.app["state"]
+    project_dir: Path | None = active_project_dir(state, _read_session_key(request))
+    snapshot = await asyncio.get_running_loop().run_in_executor(
+        discovery_executor(), _trust_snapshot, project_dir
+    )
+    return web.json_response(snapshot)
+
+
+async def api_skills_trust_grant(request: web.Request) -> web.Response:
+    """Grant project-skills trust to the REQUESTING CHAT's own project.
+
+    The directory is taken from the requesting slot, never from the request
+    body: a caller-supplied path would let anything that can reach this
+    endpoint consent on the operator's behalf for a directory they never
+    opened. The operator can only trust the project they actually have open.
+    """
+    state: DashboardState = request.app["state"]
+    session_key = _read_session_key(request)
+    project_dir: Path | None = active_project_dir(state, session_key)
+    if project_dir is None:
+        return web.json_response(
+            {
+                "error": "no project is set for this chat, so there is no directory to trust",
+                "code": "skill_trust_no_project",
+                "reason": "no_project",
+            },
+            status=400,
+        )
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(
+            discovery_executor(),
+            functools.partial(grant_project_trust, project_dir, session_key=session_key),
+        )
+    except ValueError as exc:
+        return web.json_response(
+            {"error": str(exc), "code": "skill_trust_unusable_project"}, status=400
+        )
+    snapshot = await loop.run_in_executor(discovery_executor(), _trust_snapshot, project_dir)
+    return web.json_response(snapshot)
+
+
+async def api_skills_trust_revoke(request: web.Request) -> web.Response:
+    """Withdraw a project-skills trust grant.
+
+    Unlike granting, this accepts an explicit ``path`` so the operator can
+    revoke a grant for a directory they no longer have open (or have deleted)
+    from the settings list. Removing trust only ever narrows what loads, so a
+    caller-supplied path is safe here.
+    """
+    state: DashboardState = request.app["state"]
+    session_key = _read_session_key(request)
+    target = request.query.get("path", "").strip()
+    if not target:
+        project_dir = active_project_dir(state, session_key)
+        if project_dir is None:
+            return web.json_response(
+                {
+                    "error": "no path given and no project is set for this chat",
+                    "code": "skill_trust_no_target",
+                },
+                status=400,
+            )
+        target = str(project_dir)
+    loop = asyncio.get_running_loop()
+    removed = await loop.run_in_executor(
+        discovery_executor(),
+        functools.partial(revoke_project_trust, target, session_key=session_key),
+    )
+    project_dir = active_project_dir(state, session_key)
+    snapshot = await loop.run_in_executor(discovery_executor(), _trust_snapshot, project_dir)
+    snapshot["removed"] = removed
+    return web.json_response(snapshot)
 
 
 async def api_skill_tree(request: web.Request) -> web.Response:

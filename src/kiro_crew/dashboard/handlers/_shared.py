@@ -20,6 +20,7 @@ from kiro_crew.config.loader import KiroCrewConfig, config_dir
 from kiro_crew.config.paths import kiro_agents_dir
 from kiro_crew.dashboard.state import VALID_MEMORY_MODES, DashboardState
 from kiro_crew.security import is_sensitive_path, redact_credentials, redact_exfiltration_urls
+from kiro_crew.skill_trust import is_project_trusted as _is_project_trusted
 from kiro_crew.skills import skills_dir
 from kiro_crew.slack.handler import (
     _hydrate_conv_flags,
@@ -830,7 +831,18 @@ def collect_skills_blocking(
         s.setdefault("source", "kirocrew")
     _warn_skills_outside_roots(package_skills)
     result.extend(package_skills)
-    result.extend(list_kiro_skills(project_dir))
+    workspace_rows = list_kiro_skills(project_dir)
+    if project_dir is not None:
+        # A workspace row is LISTABLE without consent but only USABLE with it:
+        # $token expansion and context injection both resolve through
+        # SkillsLoader, which gates the project root on the operator's grant.
+        # Marking the row lets the picker offer that consent instead of handing
+        # back a token that silently expands to nothing.
+        trusted = _is_project_trusted(project_dir)
+        for row in workspace_rows:
+            if row.get("source") == "kiro-workspace":
+                row["trusted"] = trusted
+    result.extend(workspace_rows)
     annotate_skills_with_agents(result)
     return result
 

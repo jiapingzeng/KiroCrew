@@ -19,6 +19,7 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Callable, Iterator
 
+from kiro_crew import skill_trust
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config.loader import KiroCrewConfig, config_dir
 from kiro_crew.cron import referenced_skill_names
@@ -1308,8 +1309,12 @@ class SkillsLoader:
         # Cache: path → (mtime, parsed_frontmatter)
         self._fm_cache: dict[str, tuple[float, dict[str, str]]] = {}
         # TTL cache of the discovered (name, path) list — avoids an os.walk per
-        # message in get_triggered_skills. (monotonic_deadline, results)
-        self._iter_cache: tuple[float, list[tuple[str, Path]]] | None = None
+        # message in get_triggered_skills. Keyed by canonical project directory
+        # ("" when no project, or the project's skills are not trusted): a
+        # trusted project contributes its own skills root, so a single shared
+        # slot would serve one session's project skills to a session working in
+        # a different project for the whole TTL. (monotonic_deadline, results)
+        self._iter_cache: dict[str, tuple[float, list[tuple[str, Path]]]] = {}
         # Extra skill paths from config (config injectable for testing)
         cfg = config or KiroCrewConfig.load()
         # Snapshot the per-message trigger cap here so get_triggered_skills (the
@@ -1368,26 +1373,61 @@ class SkillsLoader:
             )
             self._usage = None
 
-    def _iter(self) -> list[tuple[str, Path]]:
-        """Return all ``(name, skill_file)`` pairs, TTL-cached.
+    def _trusted_project_key(self, project_dir: str | Path | None) -> str:
+        """Canonical key of *project_dir* when its skills may load, else ``""``.
 
-        Local skills take precedence over extra paths. The underlying os.walk
-        is cached for ``_ITER_CACHE_TTL_SECS`` because this runs on every
-        message via ``get_triggered_skills`` — re-walking the skills tree (plus
-        every extra path) per message was a per-message latency cost.
+        Folding the trust verdict into the cache key — rather than caching it
+        alongside the results — is what makes a revoke take effect on the next
+        message instead of after the TTL: withdrawing trust changes the key back
+        to ``""``, which selects the project-free cache slot immediately.
+
+        Costs one ``realpath`` plus one cached ``stat`` when a project is set,
+        and nothing at all when it is not.
         """
-        cached = self._iter_cache
+        if project_dir is None:
+            return ""
+        key = skill_trust.canonical_key(project_dir)
+        if key is None or not skill_trust.is_key_trusted(key):
+            return ""
+        return key
+
+    def _iter(self, project_dir: str | Path | None = None) -> list[tuple[str, Path]]:
+        """Return all ``(name, skill_file)`` pairs, TTL-cached per project.
+
+        Local skills take precedence over extra paths, and both take precedence
+        over a trusted project's own skills. The underlying os.walk is cached
+        for ``_ITER_CACHE_TTL_SECS`` because this runs on every message via
+        ``get_triggered_skills`` — re-walking the skills tree (plus every extra
+        path) per message was a per-message latency cost.
+        """
+        key = self._trusted_project_key(project_dir)
+        cached = self._iter_cache.get(key)
         if cached is not None and time.monotonic() < cached[0]:
             return cached[1]
-        results = self._iter_uncached()
-        self._iter_cache = (time.monotonic() + _ITER_CACHE_TTL_SECS, results)
+        results = self._iter_uncached(key or None)
+        self._iter_cache[key] = (time.monotonic() + _ITER_CACHE_TTL_SECS, results)
         return results
 
-    def _iter_uncached(self) -> list[tuple[str, Path]]:
-        """Walk the skills dir + extra paths once (no caching)."""
+    def _iter_uncached(self, project_key: str | None = None) -> list[tuple[str, Path]]:
+        """Walk the skills dir, extra paths, and a trusted project root.
+
+        *project_key* is an already-canonical directory whose trust has already
+        been confirmed by ``_trusted_project_key`` — this function performs no
+        trust check of its own, so it must never be called with a raw
+        caller-supplied path.
+        """
         results = _iter_skill_files(self._dir)
         seen = {name for name, _ in results}
-        for root in self._extra_paths:
+        roots = list(self._extra_paths)
+        if project_key:
+            project_root = Path(project_key) / ".kiro" / "skills"
+            if project_root.is_dir():
+                # Appended LAST so a repository cannot shadow a same-named skill
+                # the operator installed globally: first-wins below means a
+                # checked-out SKILL.md can add to the catalog but never displace
+                # a trusted one whose name it copies.
+                roots.append(project_root)
+        for root in roots:
             for name, skill_file in _iter_skill_files(root):
                 if name in seen:
                     continue
@@ -1410,7 +1450,7 @@ class SkillsLoader:
         stale parse. Dropping it here keeps the mutator's edit immediately
         reflected in ``list_skills`` / ``get_triggered_skills``.
         """
-        self._iter_cache = None
+        self._iter_cache = {}
         self._fm_cache.clear()
 
     def _cached_frontmatter(self, path: Path, mtime: float | None = None) -> dict[str, str]:
@@ -1440,7 +1480,7 @@ class SkillsLoader:
         self._fm_cache[key] = (mtime, meta)
         return meta
 
-    def list_skills(self) -> list[dict]:
+    def list_skills(self, project_dir: str | Path | None = None) -> list[dict]:
         """Return per-skill metadata for the dashboard's Skills page.
 
         Carries the three fields the injection-cost control needs alongside the
@@ -1470,7 +1510,7 @@ class SkillsLoader:
         frontmatter cache instead of letting it stat again.
         """
         skills: list[dict] = []
-        for name, skill_file in self._iter():
+        for name, skill_file in self._iter(project_dir):
             try:
                 st: os.stat_result | None = skill_file.stat()
             except OSError:
@@ -1731,8 +1771,14 @@ class SkillsLoader:
         """Return True if skill name is safe (no path traversal)."""
         return bool(name) and ".." not in name and "\\" not in name
 
-    def load_skill(self, name: str) -> str | None:
-        """Load a single skill's content by name (supports nested paths)."""
+    def load_skill(self, name: str, project_dir: str | Path | None = None) -> str | None:
+        """Load a single skill's content by name (supports nested paths).
+
+        *project_dir* additionally allows a body to come from that project's own
+        trusted ``<project>/.kiro/skills``. It is probed LAST so precedence
+        matches enumeration: a repository cannot serve the body for a name the
+        operator already installed globally.
+        """
         if not self._safe_name(name):
             return None
         _t0 = time.monotonic()
@@ -1752,6 +1798,18 @@ class SkillsLoader:
                 content = Path(resolved).read_text(encoding="utf-8")
                 self._emit_lazy_load_metric(_t0, hit=True)
                 return content
+        # A trusted project's own skills, last — same order as _iter_uncached.
+        project_key = self._trusted_project_key(project_dir)
+        if project_key:
+            skill_file = Path(project_key) / ".kiro" / "skills" / name / "SKILL.md"
+            if skill_file.exists():
+                resolved = validate_file_path(str(skill_file))
+                if resolved is None:
+                    logger.warning("Refusing to load skill from sensitive path: %s", skill_file)
+                else:
+                    content = Path(resolved).read_text(encoding="utf-8")
+                    self._emit_lazy_load_metric(_t0, hit=True)
+                    return content
         self._emit_lazy_load_metric(_t0, hit=False)
         return None
 
@@ -3460,7 +3518,7 @@ class SkillsLoader:
         to the process working directory).
         """
         result: list[str] = []
-        for name, skill_file in self._iter():
+        for name, skill_file in self._iter(project_dir):
             meta = self._cached_frontmatter(skill_file)
             if meta.get("always", "").lower() == "true":
                 scope = meta.get("repo_scope", "")
@@ -3502,7 +3560,7 @@ class SkillsLoader:
         # Skills a negative trigger actively excluded — a permission DENY that
         # must still be audited (see the audit event below).
         negated_skills: list[str] = []
-        for name, skill_file in self._iter():
+        for name, skill_file in self._iter(project_dir):
             meta = self._cached_frontmatter(skill_file)
             if meta.get("always", "").lower() == "true":
                 continue
@@ -3650,14 +3708,16 @@ class SkillsLoader:
             + "\n[End of relevant skills]\n\n"
         )
 
-    def _resolve_path(self, name: str) -> Path | None:
+    def _resolve_path(
+        self, name: str, project_dir: str | Path | None = None
+    ) -> Path | None:
         """Return the ``SKILL.md`` path for an enumerated skill *name*.
 
         Allowlist-only, like ``resolve_dollar_skills``: the path comes from the
         enumeration rather than being constructed from *name*, so a crafted
         name cannot escape the skill roots.
         """
-        for candidate, skill_file in self._iter():
+        for candidate, skill_file in self._iter(project_dir):
             if candidate == name:
                 return skill_file
         return None
@@ -3691,7 +3751,7 @@ class SkillsLoader:
         than silently falling back to the full catalog: an agent mapped to a
         skill that has since been deleted must not inherit every other skill.
         """
-        all_skills = self.list_skills()
+        all_skills = self.list_skills(project_dir)
         if only is not None:
             all_skills = [s for s in all_skills if _matches_any(s.get("path", ""), only)]
         # Scope BEFORE anything is rendered. Dropping a repo-scoped skill only
@@ -3726,7 +3786,7 @@ class SkillsLoader:
         for s in all_skills:
             if s["key"] not in pinned:
                 continue
-            content = self.load_skill(s["key"])
+            content = self.load_skill(s["key"], project_dir)
             if content:
                 stripped = self.strip_frontmatter(content)
                 parts.append(f"### Skill: {s['key']}\n\n{stripped}")
@@ -3815,7 +3875,7 @@ class SkillsLoader:
         parts: list[str] = []
         # Full content for always-loaded skills
         for name in always:
-            content = self.load_skill(name)
+            content = self.load_skill(name, project_dir)
             if content:
                 stripped = self.strip_frontmatter(content)
                 parts.append(f"### Skill: {name}\n\n{stripped}")
@@ -3912,7 +3972,9 @@ class SkillsLoader:
         scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
         return [s for _, _, s in scored[:limit]]
 
-    def resolve_dollar_skills(self, text: str) -> list[tuple[str, str, str]]:
+    def resolve_dollar_skills(
+        self, text: str, project_dir: str | Path | None = None
+    ) -> list[tuple[str, str, str]]:
         """Resolve ``$skillname`` tokens in *text* to loadable skills.
 
         Scans *text* for ``$token`` occurrences (anywhere, multiple allowed) and
@@ -3940,7 +4002,7 @@ class SkillsLoader:
         # _iter() already applies local > extra-path precedence and dedupes
         # by full key, so the first full key seen for a given leaf wins.
         leaf_to_name: dict[str, str] = {}
-        for name, _path in self._iter():
+        for name, _path in self._iter(project_dir):
             leaf = name.rsplit("/", 1)[-1].lower()
             leaf_to_name.setdefault(leaf, name)
 
@@ -3954,7 +4016,7 @@ class SkillsLoader:
             matched: str | None = leaf_to_name.get(leaf)
             if matched is None or matched in seen_names:
                 continue
-            content = self.load_skill(matched)
+            content = self.load_skill(matched, project_dir)
             if content is None:
                 continue
             seen_names.add(matched)

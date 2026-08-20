@@ -612,6 +612,63 @@ Supports nested directories (e.g. `skills/utils/tiny-url/SKILL.md`). The skill n
 
 **Source precedence** (project-level wins): `$KIROCREW_PROJECT_DIR/skills/` → `builtin_skills/` (bundled). Auto-copied to `~/.kiro/crew/skills/` on first run. Copies entire skill directories (scripts, assets, etc.).
 
+**Project skills (`<project>/.kiro/skills`) — a different source from the one above.**
+`$KIROCREW_PROJECT_DIR/skills/` is a *sync* source: its contents are copied into
+`~/.kiro/crew/skills/` and thereafter are ordinary local skills. `<project>/.kiro/skills`
+is *discovered in place* for the session whose slot is bound to that project, and is
+never copied. A skill found there is reported with source `kiro-workspace`.
+
+The project reaches the loader through its public entry points (`_iter`,
+`get_triggered_skills`, `get_context`, `load_skill`, `resolve_dollar_skills`,
+`list_skills`), not through `SkillsLoader.__init__`. There are a dozen construction
+sites, none of which knows a session's project; threading the constructor would have
+required every one of them to learn about a concept only the chat paths have. A caller
+that wants project skills passes `project_dir`; every other caller is unchanged and
+sees exactly the previous behaviour. The `_iter` cache is keyed per project, so two
+chats on different projects cannot serve each other's skills from a shared entry.
+
+**Consent (`skill_trust.py`).** A SKILL.md is prose, but it enters the agent's context
+and can instruct the agent to run anything, so loading one out of whatever repository
+happens to be open is an execution-adjacent decision. Project skills are therefore
+gated on an explicit per-directory grant, recorded at
+`<data home>/trust/project-skills.json` (mode `0o600`). That directory is a
+whole-directory entry on the keystone deny list, so the agent's own file tools can
+neither read the store nor forge a grant; like every other keystone reader, the module
+opens the path directly rather than through the agent file gate.
+
+Grants are keyed on the **canonical** directory (`os.path.realpath`), because the
+directory *is* the resource. Keying on a softer identity would leave the unkeyed
+component forgeable: a second name aliasing one directory would carry its own trust,
+and a rename would orphan the record. A symlink therefore resolves to the same grant as
+its target, and cannot manufacture a new one.
+
+Every unknown resolves toward untrusted: an unreadable store, a malformed store, a
+schema version newer than this build, a relative path, a path that does not exist, and a
+path naming a file all yield no grant. Refusing to load a skill costs a click; loading
+one the operator never consented to cannot be undone.
+
+`skills.project_skills_enabled` (`SkillsConfig`, default true) is the operator's hard off
+switch — independent of any grant, so a directory carrying one still loads nothing when
+it is false.
+
+**Trust verbs.** `GET/POST/DELETE /api/skills/-/trust`, registered before the
+`/api/skills/{name}` catch-all. The grant derives its directory from the requesting
+chat slot, never from a client-supplied path, so no caller can consent on behalf of a
+directory the operator never opened. `DELETE` accepts an explicit `path` so a grant
+whose directory has since disappeared stays revocable — `list_trusted_projects` reports
+stored rows rather than the enforced set for the same reason, since an invisible grant
+could not be withdrawn.
+
+**Untrusted skills are listed, not hidden.** Catalog rows for `kiro-workspace` carry
+`trusted: bool`. A silently absent skill is indistinguishable from one that does not
+exist, so the picker shows an untrusted project skill with a "needs trust" marker and
+choosing it opens the consent dialog instead of inserting a `$token` the loader would
+refuse to resolve.
+
+**`search_skills` stays project-blind.** Only a session key reaches that boundary and
+resolving a project from it needs a seam that does not exist yet, so the MCP tool
+continues to search locally installed skills only.
+
 The bundled `session-summaries` skill is on-demand, guidance-only: it explains the
 chat session summary panel (see [session-summary](session-summary.md)) — what it
 shows, its token cost, and how to make a session summarize well — so the agent can
