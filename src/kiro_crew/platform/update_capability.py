@@ -227,10 +227,10 @@ def is_git_worktree(root: str) -> bool:
     match would silently stop working under a non-English locale.
 
     Both paths stay ANCHORED at *root*, so ancestor capture is rejected either
-    way. What the fallback cannot do is tell this install's own checkout from an
-    unrelated repository that ``KIROCREW_PROJECT_DIR`` happens to name — neither
-    could the check it replaced, and deciding it would need a signal other than
-    the path.
+    way. What neither path can do is tell this install's own checkout from an
+    unrelated repository that ``KIROCREW_PROJECT_DIR`` happens to name — that
+    needs a signal other than the path, which is what
+    :func:`running_from_checkout` supplies on top of this probe.
     """
     if not root or "\x00" in root:
         return False
@@ -252,6 +252,65 @@ def is_git_worktree(root: str) -> bool:
         return os.path.samefile(top, root)
     except OSError:
         return os.path.realpath(top) == os.path.realpath(root)
+
+
+#: Directory names that mark an INSTALLED package tree. A ``kiro_crew`` loaded
+#: through one of these is a snapshot pip copied out of some artifact — ``git
+#: pull`` in an enclosing repository does not replace its bytes, so proximity to
+#: a checkout through such a path is not provenance from it.
+_INSTALLED_TREE_MARKERS = frozenset({"site-packages", "dist-packages"})
+
+
+def running_from_checkout(root: str, *, package_dir: str | None = None) -> bool:
+    """Is the ``kiro_crew`` package THIS process executes loaded from *root*?
+
+    The signal :func:`is_git_worktree` cannot supply: that *root* is a real
+    working tree says nothing about whether the running code came from it. A
+    release install (a wheel in its own venv) whose ``KIROCREW_PROJECT_DIR``
+    resolves onto a checkout — the CWD-walking project detection does exactly
+    this when the gateway is launched from inside a clone — passes the path
+    probe while its bytes are owned by the release feed. Classifying it as a
+    git install misreports the version drift, and the apply endpoint would then
+    ``git pull`` + ``pip install -e`` that clone, silently replacing the
+    release install with whatever the clone contains.
+
+    True for the layouts whose bytes ``git pull`` in *root* genuinely updates:
+    an editable install (PEP 660 or legacy, both load from ``<root>/src``) and
+    a ``PYTHONPATH=src`` dev run. False when the package resolves outside
+    *root*, and false when it resolves inside *root* but through an installed
+    tree (``site-packages``/``dist-packages``): a venv nested under a
+    repository — a home directory that is itself a dotfiles repo — holds a
+    pip-copied snapshot, not the checkout's own sources.
+
+    *package_dir* overrides the introspected package location; it exists for
+    callers and tests that reason about a process other than this one.
+    """
+    if not root or "\x00" in root:
+        return False
+    if package_dir is None:
+        # Resolved from the imported package rather than importlib metadata:
+        # metadata answers "what did pip record", which can describe a different
+        # environment than the one this process imports from (PYTHONPATH runs
+        # have no metadata at all). Where the module actually loaded from is the
+        # question, so the module object is the authority.
+        import kiro_crew
+
+        pkg_file = getattr(kiro_crew, "__file__", None)
+        if not pkg_file:
+            return False
+        package_dir = os.path.dirname(pkg_file)
+    try:
+        pkg_real = os.path.normcase(os.path.realpath(package_dir))
+        root_real = os.path.normcase(os.path.realpath(os.path.abspath(root)))
+        rel = os.path.relpath(pkg_real, root_real)
+    except (OSError, ValueError):
+        # ValueError: the two paths live on different Windows drives, which is
+        # its own answer — the package cannot be inside the root.
+        return False
+    parts = rel.split(os.sep)
+    if parts[0] == os.pardir:
+        return False
+    return not any(part in _INSTALLED_TREE_MARKERS for part in parts)
 
 
 @dataclass(frozen=True)
@@ -374,7 +433,14 @@ def derive_capability(
             },
         )
 
-    if is_git_worktree(install_root):
+    if is_git_worktree(install_root) and running_from_checkout(install_root):
+        # BOTH halves are required for the git lane. The worktree probe answers
+        # "is this path a checkout"; provenance answers "is it THIS install's
+        # checkout". A release install pointed at someone's clone (the CWD-derived
+        # project dir does this) passes the first and must not take this branch:
+        # its updates come from the release feed below, and the apply endpoint
+        # would otherwise replace the install with the clone's contents.
+        #
         # can_apply is true because ``POST /api/update`` genuinely applies on a
         # checkout: git fetch + reset + rebuild + restart. It answers only
         # "can the running process apply this", which is the question an
@@ -439,4 +505,5 @@ __all__ = [
     "UpdateCapability",
     "derive_capability",
     "is_git_worktree",
+    "running_from_checkout",
 ]

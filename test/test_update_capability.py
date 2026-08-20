@@ -19,6 +19,7 @@ from kiro_crew.platform.update_capability import (
     _git_toplevel,
     derive_capability,
     is_git_worktree,
+    running_from_checkout,
 )
 
 
@@ -255,6 +256,65 @@ class TestIsGitWorktree:
         assert is_git_worktree("--upload-pack=touch /tmp/x") is False
 
 
+class TestRunningFromCheckout:
+    """Provenance: does the RUNNING package come from the named tree?
+
+    ``is_git_worktree`` answers a path question; these answer the install
+    question layered on top of it. The positive shape is the editable/src-layout
+    dev install; the negative shapes are the release install pointed at a clone
+    and the pip snapshot that merely lives BELOW a repository.
+    """
+
+    def test_an_editable_src_layout_is_this_installs_checkout(self, tmp_path):
+        pkg = tmp_path / "src" / "kiro_crew"
+        pkg.mkdir(parents=True)
+        assert running_from_checkout(str(tmp_path), package_dir=str(pkg)) is True
+
+    def test_a_package_outside_the_root_is_not_from_it(self, tmp_path):
+        clone = tmp_path / "clone"
+        clone.mkdir()
+        pkg = tmp_path / "crew-venv" / "lib" / "python3.12" / "site-packages" / "kiro_crew"
+        pkg.mkdir(parents=True)
+        assert running_from_checkout(str(clone), package_dir=str(pkg)) is False
+
+    def test_an_installed_copy_nested_under_the_root_is_not_from_it(self, tmp_path):
+        # A home directory that is itself a dotfiles repo, with the install's
+        # venv inside it: the package is BELOW the root, but through
+        # site-packages — a pip snapshot, not the tree's own sources.
+        pkg = tmp_path / ".venv" / "lib" / "python3.12" / "site-packages" / "kiro_crew"
+        pkg.mkdir(parents=True)
+        assert running_from_checkout(str(tmp_path), package_dir=str(pkg)) is False
+
+    def test_a_symlinked_package_dir_resolves_before_the_containment_test(self, tmp_path):
+        real_pkg = tmp_path / "src" / "kiro_crew"
+        real_pkg.mkdir(parents=True)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        link = elsewhere / "kiro_crew"
+        link.symlink_to(real_pkg, target_is_directory=True)
+        assert running_from_checkout(str(tmp_path), package_dir=str(link)) is True
+
+    def test_empty_root_is_refused(self, tmp_path):
+        assert running_from_checkout("", package_dir=str(tmp_path)) is False
+
+    def test_a_nul_byte_in_the_root_is_refused_not_raised(self, tmp_path):
+        assert running_from_checkout(str(tmp_path) + "\x00", package_dir=str(tmp_path)) is False
+
+    def test_defaults_to_where_the_imported_package_loaded_from(self, tmp_path, monkeypatch):
+        import kiro_crew
+
+        pkg = tmp_path / "src" / "kiro_crew"
+        pkg.mkdir(parents=True)
+        monkeypatch.setattr(kiro_crew, "__file__", str(pkg / "__init__.py"))
+        assert running_from_checkout(str(tmp_path)) is True
+
+    def test_a_package_with_no_file_attribute_is_not_provenance(self, tmp_path, monkeypatch):
+        import kiro_crew
+
+        monkeypatch.setattr(kiro_crew, "__file__", None)
+        assert running_from_checkout(str(tmp_path)) is False
+
+
 class TestDeriveCapability:
     @pytest.mark.parametrize("dist", ["dmg", "appimage"])
     def test_desktop_defers_to_its_own_updater(self, dist):
@@ -275,8 +335,13 @@ class TestDeriveCapability:
         assert capability.remediation is not None
         assert capability.remediation["kind"] == "image_pull"
 
-    def test_a_checkout_can_apply_in_process(self, tmp_path):
+    def test_a_checkout_can_apply_in_process(self, tmp_path, monkeypatch):
         _init_repo(tmp_path)
+        # The git lane needs BOTH halves; this test exercises the path half, so
+        # provenance is declared true rather than derived from this process.
+        monkeypatch.setattr(
+            update_capability, "running_from_checkout", lambda root, **kw: True
+        )
         capability = derive_capability(install_root=str(tmp_path), dist="source")
         assert capability.managed_by == "git"
         assert capability.can_apply is True
@@ -305,7 +370,28 @@ class TestDeriveCapability:
     def test_install_root_defaults_to_the_project_env(self, tmp_path, monkeypatch):
         _init_repo(tmp_path)
         monkeypatch.setenv("KIROCREW_PROJECT_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            update_capability, "running_from_checkout", lambda root, **kw: True
+        )
         assert derive_capability(dist="source").managed_by == "git"
+
+    def test_a_checkout_this_process_does_not_run_from_takes_the_feed(self, tmp_path):
+        """The defect the provenance half exists for.
+
+        A release install's CWD-derived project dir can land on somebody's clone
+        — a real working tree with nothing to do with the running code. The path
+        probe passes; provenance must refuse, or the check compares against the
+        clone's remote and the apply endpoint replaces the install with the
+        clone's contents. No stub here: this test process genuinely does not run
+        from ``tmp_path``, which is the exact shape of the field failure.
+        """
+        _init_repo(tmp_path)
+        capability = derive_capability(install_root=str(tmp_path), dist="wheel")
+        assert capability.managed_by == "kirocrew"
+        assert capability.can_apply is False
+        # The remediation is the installer for THIS install's real channel, not
+        # "kirocrew update" against the unrelated clone.
+        assert (capability.remediation or {}).get("command", "") != "kirocrew update"
 
     def test_to_dict_carries_the_whole_contract_half(self, tmp_path):
         contract = derive_capability(install_root=str(tmp_path), dist="wheel").to_dict()
